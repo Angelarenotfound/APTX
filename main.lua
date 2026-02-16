@@ -205,7 +205,7 @@ APTX.__index = APTX
 APTX.Sections = {}
 APTX.CurrentSection = nil
 APTX.DevMode = false
-APTX.Title = "APTX GUI"
+APTX.Title = "APTX"
 APTX.Draggable = true
 APTX.GUI = nil
 APTX.MainFrame = nil
@@ -331,31 +331,6 @@ function APTX:CreateTopBar()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = topBar
     
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Name = "CloseButton"
-    closeBtn.Size = UDim2.new(0, 35, 0, 30)
-    closeBtn.Position = UDim2.new(1, -40, 0, 5)
-    closeBtn.BackgroundColor3 = Theme.DarkGray
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Theme.White
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 18
-    closeBtn.Parent = topBar
-    
-    createCorner(6).Parent = closeBtn
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        log("Destruyendo GUI...")
-        APTX:Destroy()
-    end)
-    
-    closeBtn.MouseEnter:Connect(function()
-        tween(closeBtn, {BackgroundColor3 = Theme.Gray})
-    end)
-    
-    closeBtn.MouseLeave:Connect(function()
-        tween(closeBtn, {BackgroundColor3 = Theme.DarkGray})
-    end)
     
     APTX.TopBar = topBar
 end
