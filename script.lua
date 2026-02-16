@@ -52,39 +52,9 @@ APTX:Label(playersec, "Player modifications")
 local tpwalking = nil
 local tpwalkStack = 0
 
-APTX:Input(playersec, "Walkspeed", "edit", "Recomended 1.2 - 3", function(text)
-
-    pcall(function() 
-        if tpwalking then
-            tpwalking:Disconnect() 
-        end
-    end)
-    
-    local speed = tonumber(text)
-    
-    
-    local character = player.Character
-    local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
-    
-    if not (character and humanoid) then
-        warn("No se encontró el personaje")
-        return
-    end
-    
-    tpwalkStack = 0
-    
-    tpwalking = game:GetService("RunService").Heartbeat:Connect(function(delta)
-        if not (character and humanoid and humanoid.Parent) then
-            tpwalking:Disconnect()
-            return
-        end
-        
-        if humanoid.MoveDirection.Magnitude > 0 then
-            character:TranslateBy(humanoid.MoveDirection * (speed + tpwalkStack) * delta * 10)
-        end
-    end)
-    
-
+APTX:Slider(playersec, "Speed", "star", 0, 15, 0, function(value)
+    local at = Workspace.Players:WaitForChild(player.Name)
+    at:SetAttribute("SpeedBoost", value)
 end)
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
