@@ -17,7 +17,6 @@ local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelare
 
 
 
-
 -- START MODULES
 local cream = CreamModule:Create()
 
@@ -159,10 +158,10 @@ local function escape()
         elseif isMobile then
             local screenCenter = workspace.CurrentCamera.ViewportSize / 2
             
-
-            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.Begin)
+            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.Begin, game)
             task.wait(0.05)
-            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.End)
+            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.End, game)
+            
             
         elseif isPC then
             mouse2click()
