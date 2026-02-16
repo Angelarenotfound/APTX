@@ -28,7 +28,7 @@ local cream = CreamModule:Create()
 APTX:Config("APTX By DrexusTeam", true, true)
 
 local home = APTX:Section("Home", "home", true)
-local playersec = APTX:Section("Player", "user", false)
+local playersec = APTX:Section("Player", "heart", false)
 local combat = APTX:Section("Survivors", "shield", false)
 local killer = APTX:Section("Killers", "eye", false)
 
