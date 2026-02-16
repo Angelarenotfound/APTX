@@ -62,7 +62,7 @@ end)
 
 APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the game when using skills")
 
-APTX:Input(player, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
+APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
     pcall(function() 
         if tpwalking then
             tpwalking:Disconnect() 
