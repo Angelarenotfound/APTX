@@ -169,10 +169,8 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
 
 local function escape()
     for i = 1, 7 do
-        
             mouse2click()
             mouse1click()
-        
         task.wait(0.1)
     end
 end
