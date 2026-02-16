@@ -7,7 +7,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local vim = game:GetService("VirtualInputManager")
 
--- VARS
+-- GLOBAL VARS
 local player = Players.LocalPlayer
 
 
@@ -60,7 +60,7 @@ APTX:Slider(playersec, "Speed (game sync)", "star", 0, 5, 0, function(value)
     at:SetAttribute("SpeedBoost", value)
 end)
 
-APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the game when using skills")
+APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the anticheat")
 
 APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
     pcall(function() 
@@ -95,7 +95,7 @@ APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", funct
     
 end)
 
-APTX:Label(playersec, "This speed cannot be automatically turned off by the game; it is always active and allows free movement even in some abilities.")
+APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by the anticheat")
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
     local plr = game.Players.LocalPlayer
@@ -139,10 +139,17 @@ APTX:Button(playersec, "Rejoin Server", "refresh", function()
     game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, game.Players.LocalPlayer)
 end)
 
+
+
+
 -- Survivors section
 APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
     cream.Enabled = state
 end)
+
+
+
+
 
 
 
