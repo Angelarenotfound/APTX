@@ -24,13 +24,16 @@ local cream = CreamModule:Create()
 
 
 
--- SETUP
+-- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
 
 local home = APTX:Section("Home", "home", true)
 local playersec = APTX:Section("Player", "user", false)
 local combat = APTX:Section("Survivors", "shield", false)
 local killer = APTX:Section("Killers", "eye", false)
+
+
+
 APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 APTX:Label(home, "APTX By DrexusTeam")
 APTX:Label(home, "Outcome Memories v0.2")
@@ -136,7 +139,7 @@ end)
 -- Killers section
 local s = nil
 
-APTX:Toggle(killer, "Auto Silver Minigame", "zap", false, function(state)
+APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     if s then
         s:Disconnect()
         s = nil
