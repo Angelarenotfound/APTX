@@ -33,6 +33,11 @@ local combat = APTX:Section("Survivors", "shield", false)
 local killer = APTX:Section("Killers", "eye", false)
 
 
+-- HOME VARS
+local tpwalking = nil
+local tpwalkStack = 0
+
+-- HOME
 
 APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 APTX:Label(home, "APTX By DrexusTeam")
@@ -49,13 +54,48 @@ end)
 
 APTX:Label(playersec, "Player modifications")
 
-local tpwalking = nil
-local tpwalkStack = 0
 
-APTX:Slider(playersec, "Speed", "star", 0, 15, 0, function(value)
+APTX:Slider(playersec, "Speed (game sync)", "star", 0, 5, 0, function(value)
     local at = Workspace.Players:WaitForChild(player.Name)
     at:SetAttribute("SpeedBoost", value)
 end)
+
+APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the game when using skills")
+
+APTX:Input(player, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
+    pcall(function() 
+        if tpwalking then
+            tpwalking:Disconnect() 
+        end
+    end)
+    
+    local speed = tonumber(text)
+    
+    if not speed or speed <= 0 then
+        warn("invalid number")
+        return
+    end
+    
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
+    
+    
+    tpwalkStack = 0
+    
+    tpwalking = game:GetService("RunService").Heartbeat:Connect(function(delta)
+        if not (character and humanoid and humanoid.Parent) then
+            tpwalking:Disconnect()
+            return
+        end
+        
+        if humanoid.MoveDirection.Magnitude > 0 then
+            character:TranslateBy(humanoid.MoveDirection * (speed + tpwalkStack) * delta * 10)
+        end
+    end)
+    
+end)
+
+APTX:Label(playersec, "This speed cannot be automatically turned off by the game; it is always active and allows free movement even in some abilities.")
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
     local plr = game.Players.LocalPlayer
@@ -121,25 +161,10 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     
 
 local function escape()
-    local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-    local isPC = UserInputService.KeyboardEnabled and UserInputService.MouseEnabled
-    local hasGamepad = UserInputService.GamepadEnabled
-    
     for i = 1, 7 do
-        if isMobile and hasGamepad then
-            keypress(Enum.KeyCode.ButtonR2)
-        elseif isMobile then
-            local screenCenter = workspace.CurrentCamera.ViewportSize / 2
-            
-            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.Begin, game)
-            task.wait(0.05)
-            vim:SendTouchEvent(0, screenCenter, Enum.UserInputState.End, game)
-            
-            
-        elseif isPC then
+        
             mouse2click()
             mouse1click()
-        end
         
         task.wait(0.1)
     end
