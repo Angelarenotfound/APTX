@@ -30,35 +30,35 @@ function module:Create()
     main.Name = "Main"
     main.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     main.BorderSizePixel = 0
-    main.Position = UDim2.new(0.5, -150, 0.5, -200)
-    main.Size = UDim2.new(0, 300, 0, 400)
+    main.Position = UDim2.new(0.5, -60, 0.5, -80)  -- Ajustado: -150 → -60, -200 → -80
+    main.Size = UDim2.new(0, 120, 0, 160)  -- Reducido: 300 → 120, 400 → 160 (60% más pequeño)
     main.Parent = sg
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
+    corner.CornerRadius = UDim.new(0, 8)  -- Reducido: 12 → 8
     corner.Parent = main
     
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Thickness = 2
+    stroke.Thickness = 1  -- Reducido: 2 → 1
     stroke.Parent = main
     
     local top = Instance.new("Frame")
     top.Name = "Top"
     top.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     top.BorderSizePixel = 0
-    top.Size = UDim2.new(1, 0, 0, 45)
+    top.Size = UDim2.new(1, 0, 0, 18)  -- Reducido: 45 → 18
     top.Parent = main
     
     local topcorner = Instance.new("UICorner")
-    topcorner.CornerRadius = UDim.new(0, 12)
+    topcorner.CornerRadius = UDim.new(0, 8)  -- Reducido: 12 → 8
     topcorner.Parent = top
     
     local fix = Instance.new("Frame")
     fix.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     fix.BorderSizePixel = 0
-    fix.Position = UDim2.new(0, 0, 1, -12)
-    fix.Size = UDim2.new(1, 0, 0, 12)
+    fix.Position = UDim2.new(0, 0, 1, -8)  -- Ajustado: -12 → -8
+    fix.Size = UDim2.new(1, 0, 0, 8)  -- Reducido: 12 → 8
     fix.Parent = top
     
     local title = Instance.new("TextLabel")
@@ -68,34 +68,35 @@ function module:Create()
     title.Font = Enum.Font.GothamBold
     title.Text = "CreamHelper"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 18
+    title.TextSize = 10  -- Reducido: 18 → 10
+    title.TextScaled = true  -- Añadido para mejor ajuste
     title.Parent = top
     
     local scroll = Instance.new("ScrollingFrame")
     scroll.Name = "Scroll"
     scroll.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     scroll.BorderSizePixel = 0
-    scroll.Position = UDim2.new(0, 10, 0, 55)
-    scroll.Size = UDim2.new(1, -20, 1, -65)
+    scroll.Position = UDim2.new(0, 4, 0, 22)  -- Ajustado: 10 → 4, 55 → 22
+    scroll.Size = UDim2.new(1, -8, 1, -26)  -- Ajustado: -20 → -8, -65 → -26
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.ScrollBarThickness = 6
+    scroll.ScrollBarThickness = 3  -- Reducido: 6 → 3
     scroll.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
     scroll.Parent = main
     
     local scrollcorner = Instance.new("UICorner")
-    scrollcorner.CornerRadius = UDim.new(0, 8)
+    scrollcorner.CornerRadius = UDim.new(0, 5)  -- Reducido: 8 → 5
     scrollcorner.Parent = scroll
     
     local layout = Instance.new("UIListLayout")
     layout.SortOrder = Enum.SortOrder.Name
-    layout.Padding = UDim.new(0, 8)
+    layout.Padding = UDim.new(0, 3)  -- Reducido: 8 → 3
     layout.Parent = scroll
     
     local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0, 8)
-    padding.PaddingBottom = UDim.new(0, 8)
-    padding.PaddingLeft = UDim.new(0, 8)
-    padding.PaddingRight = UDim.new(0, 8)
+    padding.PaddingTop = UDim.new(0, 3)  -- Reducido: 8 → 3
+    padding.PaddingBottom = UDim.new(0, 3)
+    padding.PaddingLeft = UDim.new(0, 3)
+    padding.PaddingRight = UDim.new(0, 3)
     padding.Parent = scroll
     
     local drag = false
@@ -150,21 +151,22 @@ function module:Create()
         btn.Name = selectedPlayer.Name
         btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         btn.BorderSizePixel = 0
-        btn.Size = UDim2.new(1, -16, 0, 40)
+        btn.Size = UDim2.new(1, -6, 0, 16)  -- Reducido: -16 → -6, 40 → 16
         btn.Font = Enum.Font.Gotham
         btn.Text = selectedPlayer.Name
         btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.TextSize = 14
+        btn.TextSize = 8  -- Reducido: 14 → 8
+        btn.TextScaled = true  -- Añadido para mejor ajuste
         btn.AutoButtonColor = false
         btn.Parent = scroll
         
         local btncorner = Instance.new("UICorner")
-        btncorner.CornerRadius = UDim.new(0, 8)
+        btncorner.CornerRadius = UDim.new(0, 5)  -- Reducido: 8 → 5
         btncorner.Parent = btn
         
         local btnstroke = Instance.new("UIStroke")
         btnstroke.Color = Color3.fromRGB(40, 40, 40)
-        btnstroke.Thickness = 1
+        btnstroke.Thickness = 0.5  -- Reducido: 1 → 0.5
         btnstroke.Parent = btn
         
         btn.MouseButton1Click:Connect(function()
@@ -209,7 +211,7 @@ function module:Create()
             end
         end
         
-        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 16)
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 6)  -- Ajustado: 16 → 6
     end
     
     p.PlayerAdded:Connect(update)
@@ -217,7 +219,7 @@ function module:Create()
     update()
     
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 16)
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 6)
     end)
     
     -- Retornar el ScreenGui para control externo
