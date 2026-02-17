@@ -214,6 +214,7 @@ APTX:Menu(utils, "Select Character", "Selecciona...", "user", {
     "Knuckles"
 }, "Sonic", function(selected)
     chr = selected
+    print(chr)
 end)
 
 
@@ -223,6 +224,8 @@ Workspace.GameProperties.State.Changed:Connect(function(value)
         if chractive then
             local args = { chr }
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
+            print('fired con:')
+            print(chr)
         end
     end
 end)
