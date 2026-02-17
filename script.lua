@@ -9,6 +9,7 @@ local vim = game:GetService("VirtualInputManager")
 
 -- GLOBAL VARS
 local player = Players.LocalPlayer
+local tpevesit
 
 
 -- MODULES
@@ -21,6 +22,12 @@ local tpeve = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelar
 local cream = CreamModule:Create()
 
 
+
+
+-- OTHER FUNCTIONS
+local function getRoot(character)
+    return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+end
 
 
 
@@ -184,6 +191,6 @@ end
     s = character.ChildAdded:Connect(onAdd)
 end)
 
-APTX:Toggle(killer, "Insano goloso", "check", false, function(state)
+APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
     tpeve(0.5, player)
 end)
