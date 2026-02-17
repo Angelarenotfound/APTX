@@ -66,11 +66,11 @@ end)
 APTX:Label(playersec, "Player modifications")
 
 
-APTX:Slider(playersec, "Speed (game sync)", "star", 0, 5, 0, function(value)
-    local at = Workspace.Players:WaitForChild(player.Name)
-    at:SetAttribute("SpeedBoost", value)
+APTX:Slider(playersec, "Speed (game sync)", "star", 2, 100, 0, function(value)
+    local at = Workspace.Players:WaitForChild(player.Name).ClientHandler
+    at:SetAttribute("LockSpeed", value)
 end)
-
+workspace.Players.sivrosoyinsano.
 APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the anticheat")
 
 APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
