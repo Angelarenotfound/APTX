@@ -5,16 +5,14 @@ local function getRoot(character)
     return character and character:FindFirstChild("HumanoidRootPart")
 end
 
-local function tpeve(delay, l)
-    local speaker = l
-    local allPlayers = Players:GetPlayers()
+local function tpeve(delay, speaker)
     local currentIndex = 1
     local isActive = true
     local headSit
 
     local function stopLoop()
         isActive = false
-        if headSit then 
+        if headSit then
             headSit:Disconnect()
             headSit = nil
         end
@@ -24,6 +22,7 @@ local function tpeve(delay, l)
         if not isActive then return end
         if headSit then headSit:Disconnect() end
 
+        local allPlayers = Players:GetPlayers() -- siempre fresco
         local targetPlayer
         local attempts = 0
 
@@ -43,7 +42,6 @@ local function tpeve(delay, l)
         end
 
         if not targetPlayer then
-            print("No hay más jugadores disponibles")
             stopLoop()
             return
         end
@@ -62,21 +60,15 @@ local function tpeve(delay, l)
                 return
             end
 
-            if Players:FindFirstChild(targetPlayer.Name)
-               and targetPlayer.Character
-               and getRoot(targetPlayer.Character)
-               and getRoot(speaker.Character)
-               and humanoid.Sit then
+            local targetRoot = getRoot(targetPlayer.Character)
+            local speakerRoot = getRoot(speaker.Character)
 
-                getRoot(speaker.Character).CFrame =
-                    getRoot(targetPlayer.Character).CFrame *
-                    CFrame.new(0, 1.6, 0.4)
+            if targetRoot and speakerRoot and humanoid.Sit then
+                speakerRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 1.6, 0.4)
             else
                 headSit:Disconnect()
             end
         end)
-
-        print("Teletransportado a: " .. targetPlayer.Name)
 
         currentIndex += 1
         if currentIndex > #allPlayers then
@@ -86,7 +78,6 @@ local function tpeve(delay, l)
         if attempts < #allPlayers - 1 and isActive then
             task.delay(delay, tpToNextPlayer)
         else
-            print("Ciclo completado")
             stopLoop()
         end
     end
