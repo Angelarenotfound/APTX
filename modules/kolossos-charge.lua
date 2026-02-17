@@ -1,21 +1,21 @@
 local function tpeve(delay)
-    local speaker = player
-    local allPlayers = Players:GetPlayers()
+    local speaker = _G.player
+    local allPlayers = _G.Players:GetPlayers()
     local currentIndex = 1
     local isActive = true
     
     local function stopLoop()
         isActive = false
-        if headSit then 
-            headSit:Disconnect()
-            headSit = nil
+        if _G.tpevesit then 
+            tpevesit:Disconnect()
+            _G.tpevesit = nil
         end
     end
     
     local function tpToNextPlayer()
         if not isActive then return end
         
-        if headSit then headSit:Disconnect() end
+        if _G.tpevesit then _G.tpevesit:Disconnect() end
         
         local targetPlayer = nil
         local attempts = 0
@@ -42,9 +42,9 @@ local function tpeve(delay)
         end
         
         speaker.Character:FindFirstChildOfClass('Humanoid').Sit = true
-        headSit = RunService.Heartbeat:Connect(function()
+        _G.tpevesit = RunService.Heartbeat:Connect(function()
             if not isActive then
-                headSit:Disconnect()
+                _G.tpevesit:Disconnect()
                 return
             end
             
@@ -54,7 +54,7 @@ local function tpeve(delay)
                 getRoot(speaker.Character).CFrame = getRoot(targetPlayer.Character).CFrame * 
                     CFrame.Angles(0, math.rad(0), 0) * CFrame.new(0, 1.6, 0.4)
             else
-                headSit:Disconnect()
+                _G.tpevesit:Disconnect()
             end
         end)
         

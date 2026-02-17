@@ -1,5 +1,5 @@
 -- SERVICES
-local Players = game:GetService("Players")
+_G.Players, Players = game:GetService("Players"), game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -8,8 +8,8 @@ local Workspace = game:GetService("Workspace")
 local vim = game:GetService("VirtualInputManager")
 
 -- GLOBAL VARS
-local player = Players.LocalPlayer
-local tpevesit
+_G.player, player = Players.LocalPlayer, Players.LocalPlayer
+_G.tpevesit = nil
 
 
 -- MODULES
@@ -155,11 +155,6 @@ APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
 end)
 
 
-
-
-
-
-
 -- Killers section
 local s = nil
 
@@ -173,14 +168,13 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     
     local character = workspace.Players:WaitForChild(player.Name, 10)
     
-
-local function escape()
-    for i = 1, 7 do
+    local function escape()
+        for i = 1, 7 do
             mouse2click()
             mouse1click()
-        task.wait(0.1)
+            task.wait(0.1)
+        end
     end
-end
     
     local function onAdd(child)
         if state and child:IsA("Highlight") then
