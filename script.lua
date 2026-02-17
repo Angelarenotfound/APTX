@@ -10,6 +10,9 @@ local vim = game:GetService("VirtualInputManager")
 -- GLOBAL VARS
 _G.player, player = Players.LocalPlayer, Players.LocalPlayer
 _G.tpevesit = nil
+local chractive
+local chr
+
 
 
 -- MODULES
@@ -38,7 +41,7 @@ local home = APTX:Section("Home", "home", true)
 local playersec = APTX:Section("Player", "heart", false)
 local combat = APTX:Section("Survivors", "shield", false)
 local killer = APTX:Section("Killers", "eye", false)
-
+local utils = APTX:Section("Utilities", "folder", false)
 
 -- HOME VARS
 local tpwalking = nil
@@ -188,4 +191,38 @@ end)
 APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
     local plrs = Players:GetPlayers()
     tpeve(0.5, plrs)
+end)
+
+
+
+
+
+APTX:Toggle(utils, "Auto Select Character", "check", false, function(state)
+    local chractive = state
+end)
+
+APTX:Menu(utils, "Select Character", "Selecciona...", "user", {
+    "Metalsonic",
+    "Eggman",
+    "Sonic",
+    "Amy",
+    "Shadow",
+    "Silver",
+    "Blaze",
+    "Cream",
+    "Tails",
+    "Knuckles"
+}, "Sonic", function(selected)
+    chr = selected
+end)
+
+
+-- LISTINERS
+Workspace.GameProperties.State.Changed:Connect(function(value)
+    if value == "SEC" then
+        if chractive then
+            local args = { chr }
+            ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
+        end
+    end
 end)
