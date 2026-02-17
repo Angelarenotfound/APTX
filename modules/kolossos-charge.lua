@@ -1,5 +1,5 @@
-local function tpeve(delay, player)
-    local speaker = player
+local function tpeve(delay, l)
+    local speaker = l
     local allPlayers = game.Players:GetPlayers()
     local currentIndex = 1
     local isActive = true
