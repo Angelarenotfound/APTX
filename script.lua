@@ -14,7 +14,7 @@ local player = Players.LocalPlayer
 -- MODULES
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
 local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/main.lua"))()
-
+local tpeve = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/kolossos-charge.lua"))()
 
 
 -- START MODULES
@@ -182,4 +182,8 @@ end
     end
     
     s = character.ChildAdded:Connect(onAdd)
+end)
+
+APTX:Toggle(killer, "Kolossos Charge ALL", "check", false, function(state)
+    tpeve(0.5, player)
 end)
