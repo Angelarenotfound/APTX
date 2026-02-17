@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local Workspace = game:GetService("Workspace")
 local vim = game:GetService("VirtualInputManager")
 
@@ -46,7 +47,7 @@ local utils = APTX:Section("Utilities", "folder", false)
 -- HOME VARS
 local tpwalking = nil
 local tpwalkStack = 0
-local flyspeed = 1
+
 -- HOME
 
 APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -194,17 +195,73 @@ APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
 end)
 
 
+--UTILS VARS
+local flyspeed = 1
+local flystate = false
+local flyKeybind
+local listening = false
 
-APTX:Input(utils, "Fly Speed", "edit", "Recomended 1 - 3", function(text)
-    local flyspeed = text
-end)
+-- UTILS FUNCTIONS
+local function bindFlyKey(keyCode)
+    ContextActionService:UnbindAction("FlyToggle")
+    
+    ContextActionService:BindAction(
+        "FlyToggle",
+        function(actionName, inputState)
+            if inputState == Enum.UserInputState.Begin then
+                toggleFly()
+            end
+        end,
+        false,
+        keyCode
+    )
+end
 
-APTX:Toggle(utils, "Fly", "cloud", false, function(state)
-    if state then
+local function setFly(state)
+    flystate = state
+    
+    if flystate then
         fly:Mobile(flyspeed)
     else
         unfly:Mobile()
     end
+end
+
+local function toggleFly()
+    setFly(not flystate)
+end
+
+
+
+APTX:Button(home, "Set Fly Keybind", "key", function()
+    if listening then return end
+    listening = true
+    print("Presiona una tecla o botón")
+
+    local conn
+    conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.UserInputType == Enum.UserInputType.Keyboard
+        or input.UserInputType == Enum.UserInputType.Gamepad1 then
+            
+            flyKeybind = input.KeyCode
+            print("Fly key:", flyKeybind.Name)
+
+            bindFlyKey(flyKeybind)
+
+            listening = false
+            conn:Disconnect()
+        end
+    end)
+end)
+
+APTX:Input(utils, "Fly Speed", "edit", "Recomended 1 - 3", function(text)
+    flyspeed = tonumber(text) or 1
+end)
+
+APTX:Toggle(utils, "Fly", "cloud", false, function(state)
+    setFly(state)
 end)
 
 
