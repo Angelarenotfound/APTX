@@ -184,6 +184,6 @@ end
     s = character.ChildAdded:Connect(onAdd)
 end)
 
-APTX:Toggle(killer, "Kolossos Charge ALL", "check", false, function(state)
+APTX:Toggle(killer, "Insano goloso", "check", false, function(state)
     tpeve(0.5, player)
 end)
