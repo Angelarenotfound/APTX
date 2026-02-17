@@ -46,7 +46,7 @@ local utils = APTX:Section("Utilities", "folder", false)
 -- HOME VARS
 local tpwalking = nil
 local tpwalkStack = 0
-
+local flyspeed = 1
 -- HOME
 
 APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -195,10 +195,13 @@ end)
 
 
 
+APTX:Input(utils, "Fly Speed", "edit", "Recomended 1 - 3", function(text)
+    local flyspeed = text
+end)
 
 APTX:Toggle(utils, "Fly", "cloud", false, function(state)
     if state then
-        fly:Mobile()
+        fly:Mobile(flyspeed)
     else
         unfly:Mobile()
     end
@@ -230,7 +233,7 @@ end)
 Workspace.GameProperties.State.Changed:Connect(function(value)
     if value == "SEC" then
         if chractive then
-            task.wait(4)
+            task.wait(6)
             local args = { chr }
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
             print('fired con:')

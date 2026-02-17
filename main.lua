@@ -1,7 +1,6 @@
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-
 local Icons = {
     ["aperture"] = "rbxassetid://7733666258",
     ["bug"] = "rbxassetid://7733701545",
