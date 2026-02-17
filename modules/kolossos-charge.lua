@@ -1,7 +1,7 @@
-local function tpeve(delay)
+local function tpeve(delay, plrs)
     local Players = game:GetService("Players")
     local speaker = _G.player
-    local allPlayers = Players:GetPlayers()
+    local allPlayers = plrs
     local currentIndex = 1
     local isActive = true
     

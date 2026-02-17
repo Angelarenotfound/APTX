@@ -105,7 +105,7 @@ end)
 APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by the anticheat")
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
-    local plr = game.Players.LocalPlayer
+    local plr = player
     
     if state then
         _G.InfJumpConnection = game:GetService("UserInputService").JumpRequest:Connect(function()
@@ -186,5 +186,6 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
 end)
 
 APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
-    tpeve(0.5, player)
+    local plrs = Players:GetPlayers()
+    tpeve(0.5, plrs)
 end)
