@@ -222,6 +222,7 @@ end)
 Workspace.GameProperties.State.Changed:Connect(function(value)
     if value == "SEC" then
         if chractive then
+            task.wait(4)
             local args = { chr }
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
             print('fired con:')
