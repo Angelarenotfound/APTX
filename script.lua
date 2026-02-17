@@ -19,7 +19,7 @@ local chr
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
 local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/main.lua"))()
 local tpeve = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/kolossos-charge.lua"))()
-
+local fly, unfly = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/fly.lua"))()
 
 -- START MODULES
 local cream = CreamModule:Create()
@@ -195,6 +195,14 @@ end)
 
 
 
+
+APTX:Toggle(utils, "Fly", "cloud", false, function(state)
+    if state then
+        fly:Mobile()
+    else
+        unfly:Mobile()
+    end
+end)
 
 
 APTX:Toggle(utils, "Auto Select Character", "check", false, function(state)
