@@ -1,3 +1,6 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local function getRoot(character)
     return character and character:FindFirstChild("HumanoidRootPart")
 end
