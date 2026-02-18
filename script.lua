@@ -182,6 +182,12 @@ APTX:Button(playersec, "Rejoin Server", "refresh", function()
 end)
 
 
+-- SURVIVORS VARS
+local automc = false
+local automcLoop = nil
+local mcstarted = false
+
+
 
 -- SURVIVORS FUNCTIONS
 local function mheal()
@@ -255,6 +261,74 @@ local function tpexe()
     end
 end
 
+local function metaltpc()
+    local exe = nil
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+        local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
+        if obj and obj:GetAttribute("Team") == "EXE" then
+            exe = p
+            break
+        end
+    end
+
+    if not exe then return end
+
+    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local exeRoot = exe.Character and exe.Character:FindFirstChild("HumanoidRootPart")
+
+    if not myRoot or not exeRoot then return end
+    if (myRoot.Position - exeRoot.Position).Magnitude > 20 then return end
+
+    if sit then sit:Disconnect() end
+    target = exe
+
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Sit = true
+
+        sit = RunService.Heartbeat:Connect(function()
+            if exe and Players:FindFirstChild(exe.Name) and exe.Character and exe.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(player.Character).CFrame = getRoot(exe.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
+            else
+                if sit then sit:Disconnect() end
+                target = nil
+            end
+        end)
+    end
+end
+
+local function startAutomc()
+    if automcLoop then automcLoop:Disconnect() end
+    automcLoop = RunService.Heartbeat:Connect(function()
+        if not automc then
+            automcLoop:Disconnect()
+            automcLoop = nil
+            return
+        end
+
+        local exe = nil
+        for _, p in ipairs(Players:GetPlayers()) do
+            local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
+            if obj and obj:GetAttribute("Team") == "EXE" then
+                exe = p
+                break
+            end
+        end
+
+        if not exe then return end
+
+        local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        local exeRoot = exe.Character and exe.Character:FindFirstChild("HumanoidRootPart")
+
+        if not myRoot or not exeRoot then return end
+
+        if (myRoot.Position - exeRoot.Position).Magnitude <= 20 and not target then
+            metaltpc()
+        end
+    end)
+end
+
+
 
 -- Survivors section
 APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
@@ -269,6 +343,14 @@ APTX:Toggle(combat, "Auto metalsonic eggman heal", "redo", false, function(state
     mhealing = state
 end)
 
+APTX:Toggle(combat, "Metalsonic Charge hitbox", "calculator", false, function(state)
+    local automc = state
+    if not mcstarted then
+        startAutomc()
+        local mcstarted = true
+    end
+    
+end)
 
 -- Killers FUNCTIONS
 local function xcharge()
