@@ -13,7 +13,6 @@ _G.player, player = Players.LocalPlayer, Players.LocalPlayer
 _G.tpevesit = nil
 local chractive
 local chr
-local team = Workspace.Players:WaitForChild(player.Name):GetAttribute("Team")
 texe = false
 
 
@@ -35,10 +34,19 @@ local function getRoot(character)
 end
 
 local function getChar()
-    local rchar = "so"
+    local rchar = workspace.Players:WaitForChild(player.Name):GetAttribute("Character")
     return rchar
 end
 
+local function getTeam()
+    local team = Workspace.Players:WaitForChild(player.Name):GetAttribute("Team")
+    return team
+end
+
+local function gameState()
+    local gstate = Workspace.GameProperties.State.Value
+    return gstate
+end
 -- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
 
@@ -285,11 +293,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 --ENDS FLY FUNCTION
 
 -- TP METAL & SONIC
-    if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonL1 then
-        if texe then
+    local key = input.KeyCode
+    if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe and gameState() == "ING" then
+        local char = getChar()
+        if char == "Sonic" or char == "MetalSonic" then
             tpexe()
             end
-    end
+        end
 end)
 
 APTX:Button(utils, "Set Fly Keybind", "key", function()
@@ -315,7 +325,7 @@ APTX:Toggle(utils, "Auto Select Character", "check", false, function(state)
 end)
 
 APTX:Menu(utils, "Select Character", "Selecciona...", "user", {
-    "Metalsonic",
+    "MetalSonic",
     "Eggman",
     "Sonic",
     "Amy",
