@@ -851,425 +851,387 @@ function APTX:Label(sectionName, text)
 end
 
 -- ══════════════════════════════════════════════════════════════
---  APTX:Notify  —  Sistema de notificaciones integrado
+--  APTX:Notify
 -- ══════════════════════════════════════════════════════════════
 
-local RunService_N   = game:GetService("RunService")
-local UserInputSvc_N = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local _NeonPalettes = {
-	warning = { Color3.fromRGB(255, 210, 0),  Color3.fromRGB(255, 120, 0)   },
-	success = { Color3.fromRGB(0,   255, 110), Color3.fromRGB(0,   200, 50)  },
-	error   = { Color3.fromRGB(255, 40,  40),  Color3.fromRGB(255, 0,   130) },
-	neutral = { Color3.fromRGB(255, 255, 255), Color3.fromRGB(160, 160, 255) },
+local N_PALETTES = {
+	warning = { Color3.fromRGB(255,210,0),   Color3.fromRGB(255,120,0)   },
+	success = { Color3.fromRGB(0,255,110),   Color3.fromRGB(0,200,50)    },
+	error   = { Color3.fromRGB(255,40,40),   Color3.fromRGB(255,0,130)   },
+	neutral = { Color3.fromRGB(255,255,255), Color3.fromRGB(160,160,255) },
 }
 
-local function _ntw(obj, props, t, style, dir)
-	local info = TweenInfo.new(t or 0.25, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out)
-	TweenService:Create(obj, info, props):Play()
+local NC = {
+	BG      = Color3.fromRGB(0,  0,  0),
+	TOPBAR  = Color3.fromRGB(10, 10, 10),
+	DIVIDER = Color3.fromRGB(65, 65, 70),
+	ACCENT  = Color3.fromRGB(88, 101,242),
+	NEUTRAL = Color3.fromRGB(72, 72, 80),
+	TXT_PRI = Color3.fromRGB(245,245,255),
+	TXT_SEC = Color3.fromRGB(175,175,185),
+	CLOSEBG = Color3.fromRGB(45, 45, 50),
+	DECLINE = Color3.fromRGB(237,66, 69),
+}
+
+local NV = {
+	W      = 272, TOPBAR = 32, BODY = 68, BODY_SLIM = 56,
+	BTN_H  = 41,  PAD    = 12, BTN_W = 102, BTN_SZ = 26,
+	ICON   = 31,  AVA    = 17,
+}
+
+local function ntw(obj, props, t, style, dir)
+	TweenService:Create(obj,
+		TweenInfo.new(t or 0.25, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out),
+		props):Play()
 end
 
-local function _nCorner(parent, r)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, r or 10)
-	c.Parent = parent
+local function nMake(cls, props, parent)
+	local i = Instance.new(cls)
+	for k, v in pairs(props) do i[k] = v end
+	if parent then i.Parent = parent end
+	return i
 end
 
-local function _nStroke(parent, color, thickness)
-	local s = Instance.new("UIStroke")
-	s.Color = color or Color3.fromRGB(60, 60, 60)
-	s.Thickness = thickness or 1.5
-	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	s.Parent = parent
+local function nCorner(parent, r)
+	nMake("UICorner", {CornerRadius = UDim.new(0, r or 10)}, parent)
 end
 
-local function _buildNeon(card, notifType)
-	local pal = _NeonPalettes[notifType] or _NeonPalettes.neutral
-	local c1, c2 = pal[1], pal[2]
-	local ns = Instance.new("UIStroke")
-	ns.Thickness = 2.5
-	ns.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	ns.Color  = c1
-	ns.Parent = card
-	local t = 0
-	local conn = RunService_N.Heartbeat:Connect(function(dt)
+local function nStroke(parent, color, thick)
+	nMake("UIStroke", {
+		Color = color or Color3.fromRGB(60,60,60),
+		Thickness = thick or 1.5,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	}, parent)
+end
+
+local function nNeon(card, notifType)
+	local pal = N_PALETTES[notifType] or N_PALETTES.neutral
+	local c1, c2, t = pal[1], pal[2], 0
+	local ns = nMake("UIStroke", {
+		Thickness = 2.5,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = c1,
+	}, card)
+	local conn = RunService.Heartbeat:Connect(function(dt)
 		t = (t + dt * 1.4) % 1
 		ns.Color = c1:Lerp(c2, math.abs(math.sin(t * math.pi)))
 	end)
 	return conn
 end
 
-local N_SCALE    = 0.85
-local N_W        = math.floor(320 * N_SCALE)
-local N_TOPBAR_H = math.floor(38  * N_SCALE)
-local N_BODY_H   = math.floor(80  * N_SCALE)
-local N_BTN_H    = math.floor(48  * N_SCALE)
-local N_PAD      = math.floor(14  * N_SCALE)
-local N_BTN_W    = math.floor(120 * N_SCALE)
-local N_BTN_SZ   = math.floor(30  * N_SCALE)
-local N_ICON_SZ  = math.floor(36  * N_SCALE)
-local N_AVA_SZ   = math.floor(20  * N_SCALE)
+local function nImg(parent, img, props)
+	return nMake("ImageLabel", {
+		BackgroundTransparency = 1,
+		Image = img or "",
+		ScaleType = Enum.ScaleType.Fit,
+	}, nil) -- set props below then parent
+end
 
-local NC = {
-	BG      = Color3.fromRGB(0,   0,   0),
-	TOPBAR  = Color3.fromRGB(10,  10,  10),
-	DIVIDER = Color3.fromRGB(65,  65,  70),
-	ACCENT  = Color3.fromRGB(88,  101, 242),
-	NEUTRAL = Color3.fromRGB(72,  72,  80),
-	TXT_PRI = Color3.fromRGB(245, 245, 255),
-	TXT_SEC = Color3.fromRGB(175, 175, 185),
-	CLOSEBG = Color3.fromRGB(45,  45,  50),
-	DECLINE = Color3.fromRGB(237, 66,  69),
-}
+local function nBtn(parent, bg, text, textSize)
+	local b = nMake("TextButton", {
+		Size = UDim2.new(0, NV.BTN_W, 0, NV.BTN_SZ),
+		BackgroundColor3 = bg,
+		Text = text or "",
+		Font = Enum.Font.GothamBold,
+		TextSize = textSize or 10,
+		TextColor3 = Color3.new(1,1,1),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		ZIndex = 4,
+	}, parent)
+	nCorner(b, 7)
+	nMake("UIStroke", {Color=Color3.new(1,1,1), Transparency=0.88, Thickness=1}, b)
+	return b
+end
+
+local function nHover(btn, normal, hover)
+	btn.MouseEnter:Connect(function() ntw(btn, {BackgroundColor3=hover}, 0.13) end)
+	btn.MouseLeave:Connect(function() ntw(btn, {BackgroundColor3=normal}, 0.13) end)
+end
+
+local function nDraggable(handle, card)
+	local drag, input, start, sPos
+	handle.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			drag, start, sPos = true, i.Position, card.Position
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then drag = false end
+			end)
+		end
+	end)
+	handle.InputChanged:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseMovement then input = i end
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if i == input and drag then
+			local d = i.Position - start
+			card.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset+d.X, sPos.Y.Scale, sPos.Y.Offset+d.Y)
+		end
+	end)
+end
 
 function APTX:Notify(params)
-	assert(type(params) == "table",  "[APTX:Notify] params debe ser una tabla")
-	assert(params.title,             "[APTX:Notify] params.title es requerido")
-	assert(params.content,           "[APTX:Notify] params.content es requerido")
+	assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
+	assert(params.title,            "[APTX:Notify] params.title es requerido")
+	assert(params.content,          "[APTX:Notify] params.content es requerido")
 
-	local title     = params.title
-	local body      = params.content
-	local iconTop   = params["topbar-icon"]
-	local iconBody  = params["content-icon"]
-	local duration  = params.duration
-	local sound     = params.sound
-	local buttons   = params.buttons
-	local notifType = params.type or "neutral"
+	local title      = params.title
+	local body       = params.content
+	local iconTop    = params["topbar-icon"]
+	local iconBody   = params["content-icon"]
+	local duration   = params.duration
+	local sound      = params.sound
+	local buttons    = params.buttons
+	local notifType  = params.type or "neutral"
 
-	local hasIconTop  = iconTop  ~= nil and iconTop  ~= ""
-	local hasIconBody = iconBody ~= nil and iconBody ~= ""
-	local hasButtons  = buttons  ~= nil and #buttons  > 0
-	local hasDuration = duration ~= nil and duration  > 0
+	local hasTIcon   = iconTop  and iconTop  ~= ""
+	local hasBIcon   = iconBody and iconBody ~= ""
+	local hasBtns    = buttons  and #buttons  > 0
+	local hasDur     = duration and duration  > 0
 
-	local BODY_ACTUAL = hasIconBody and N_BODY_H or math.floor(60 * N_SCALE)
-	local BTN_ACTUAL  = hasButtons  and N_BTN_H  or 0
-	local CARD_H      = N_TOPBAR_H + BODY_ACTUAL + 2 + BTN_ACTUAL + (hasButtons and 0 or math.floor(6 * N_SCALE))
+	local bodyH  = hasBIcon and NV.BODY or NV.BODY_SLIM
+	local btnH   = hasBtns  and NV.BTN_H or 0
+	local CARD_H = NV.TOPBAR + 1 + bodyH + (hasBtns and (2 + btnH) or 6)
 
-	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	-- Use the existing APTX ScreenGui so no extra ScreenGui is created per notification
+	assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
+	local gui = APTX.GUI
 
-	local SG = Instance.new("ScreenGui")
-	SG.Name           = "APTXNOTIFY"
-	SG.ResetOnSpawn   = false
-	SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	SG.Parent         = playerGui
+	-- Card
+	local Card = nMake("Frame", {
+		Name = "NotifCard_"..tostring(tick()),
+		Size = UDim2.new(0, NV.W, 0, CARD_H),
+		Position = UDim2.new(1, NV.W + 20, 1, -(CARD_H + 16)),
+		BackgroundColor3 = NC.BG,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 10,
+	}, gui)
+	nCorner(Card, 13)
+	local neonConn = nNeon(Card, notifType)
 
-	local Card = Instance.new("Frame")
-	Card.Name              = "Card"
-	Card.Size              = UDim2.new(0, N_W, 0, CARD_H)
-	Card.Position          = UDim2.new(1, N_W + 20, 1, -(CARD_H + 16))
-	Card.BackgroundColor3  = NC.BG
-	Card.BorderSizePixel   = 0
-	Card.ClipsDescendants  = true
-	Card.Parent            = SG
-	_nCorner(Card, 13)
+	-- TopBar
+	local TB = nMake("Frame", {
+		Size = UDim2.new(1, 0, 0, NV.TOPBAR),
+		BackgroundColor3 = NC.TOPBAR,
+		BorderSizePixel = 0,
+		ZIndex = 11,
+	}, Card)
+	nCorner(TB, 13)
+	-- patch to flatten bottom corners of topbar
+	nMake("Frame", {
+		Size = UDim2.new(1, 0, 0, 13),
+		Position = UDim2.new(0, 0, 1, -13),
+		BackgroundColor3 = NC.TOPBAR,
+		BorderSizePixel = 0,
+		ZIndex = 11,
+	}, TB)
 
-	local neonConn = _buildNeon(Card, notifType)
-
-	local TB = Instance.new("Frame")
-	TB.Name             = "TopBar"
-	TB.Size             = UDim2.new(1, 0, 0, N_TOPBAR_H)
-	TB.BackgroundColor3 = NC.TOPBAR
-	TB.BorderSizePixel  = 0
-	TB.ZIndex           = 2
-	TB.Parent           = Card
-	_nCorner(TB, 13)
-
-	local TBpatch = Instance.new("Frame")
-	TBpatch.Size             = UDim2.new(1, 0, 0, 14)
-	TBpatch.Position         = UDim2.new(0, 0, 1, -14)
-	TBpatch.BackgroundColor3 = NC.TOPBAR
-	TBpatch.BorderSizePixel  = 0
-	TBpatch.ZIndex           = 2
-	TBpatch.Parent           = TB
-
-	local AccLine = Instance.new("Frame")
-	AccLine.Size             = UDim2.new(0, 3, 1, 0)
-	AccLine.BackgroundColor3 = NC.ACCENT
-	AccLine.BorderSizePixel  = 0
-	AccLine.ZIndex           = 3
-	AccLine.Parent           = TB
-	_nCorner(AccLine, 2)
-
+	-- TopBar icon (optional)
 	local AvaImg
-	local titleOffsetX = N_PAD + 6
-
-	if hasIconTop then
-		local AvaFrame = Instance.new("Frame")
-		AvaFrame.Size             = UDim2.new(0, N_AVA_SZ, 0, N_AVA_SZ)
-		AvaFrame.Position         = UDim2.new(0, N_PAD - 2, 0.5, 0)
-		AvaFrame.AnchorPoint      = Vector2.new(0, 0.5)
-		AvaFrame.BackgroundColor3 = NC.ACCENT
-		AvaFrame.BorderSizePixel  = 0
-		AvaFrame.ZIndex           = 3
-		AvaFrame.Parent           = TB
-		_nCorner(AvaFrame, 99)
-
-		AvaImg = Instance.new("ImageLabel")
-		AvaImg.Size                   = UDim2.new(1, 0, 1, 0)
-		AvaImg.BackgroundTransparency = 1
-		AvaImg.Image                  = iconTop
-		AvaImg.ScaleType              = Enum.ScaleType.Crop
-		AvaImg.ZIndex                 = 4
-		AvaImg.Parent                 = AvaFrame
-		_nCorner(AvaImg, 99)
-
-		titleOffsetX = N_AVA_SZ + N_PAD + 8
+	local titleX = NV.PAD
+	if hasTIcon then
+		local af = nMake("Frame", {
+			Size = UDim2.new(0, NV.AVA, 0, NV.AVA),
+			Position = UDim2.new(0, NV.PAD, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = NC.ACCENT,
+			BorderSizePixel = 0,
+			ZIndex = 12,
+		}, TB)
+		nCorner(af, 99)
+		AvaImg = nMake("ImageLabel", {
+			Size = UDim2.new(1,0,1,0),
+			BackgroundTransparency = 1,
+			Image = iconTop,
+			ScaleType = Enum.ScaleType.Crop,
+			ZIndex = 13,
+		}, af)
+		nCorner(AvaImg, 99)
+		titleX = NV.AVA + NV.PAD + 6
 	end
 
-	local TitleLbl = Instance.new("TextLabel")
-	TitleLbl.Size                   = UDim2.new(1, -(titleOffsetX + 34), 1, 0)
-	TitleLbl.Position               = UDim2.new(0, titleOffsetX, 0, 0)
-	TitleLbl.BackgroundTransparency = 1
-	TitleLbl.Text                   = title
-	TitleLbl.Font                   = Enum.Font.GothamBold
-	TitleLbl.TextSize               = math.floor(12 * N_SCALE)
-	TitleLbl.TextColor3             = NC.TXT_PRI
-	TitleLbl.TextXAlignment         = Enum.TextXAlignment.Left
-	TitleLbl.TextTruncate           = Enum.TextTruncate.AtEnd
-	TitleLbl.ZIndex                 = 3
-	TitleLbl.Parent                 = TB
+	-- Title
+	local TitleLbl = nMake("TextLabel", {
+		Size = UDim2.new(1, -(titleX + 30), 1, 0),
+		Position = UDim2.new(0, titleX, 0, 0),
+		BackgroundTransparency = 1,
+		Text = title,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = NC.TXT_PRI,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 12,
+	}, TB)
 
-	local CloseBtn = Instance.new("ImageButton")
-	CloseBtn.Size             = UDim2.new(0, math.floor(24 * N_SCALE), 0, math.floor(24 * N_SCALE))
-	CloseBtn.Position         = UDim2.new(1, -math.floor(30 * N_SCALE), 0.5, 0)
-	CloseBtn.AnchorPoint      = Vector2.new(0, 0.5)
-	CloseBtn.BackgroundColor3 = NC.CLOSEBG
-	CloseBtn.Image            = "rbxassetid://7072725342"
-	CloseBtn.ImageColor3      = Color3.fromRGB(190, 190, 200)
-	CloseBtn.ScaleType        = Enum.ScaleType.Fit
-	CloseBtn.BorderSizePixel  = 0
-	CloseBtn.AutoButtonColor  = false
-	CloseBtn.ZIndex           = 4
-	CloseBtn.Parent           = TB
-	_nCorner(CloseBtn, 99)
+	-- Close button
+	local CloseBtn = nMake("ImageButton", {
+		Size = UDim2.new(0, 20, 0, 20),
+		Position = UDim2.new(1, -26, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = NC.CLOSEBG,
+		Image = "rbxassetid://7072725342",
+		ImageColor3 = Color3.fromRGB(190,190,200),
+		ScaleType = Enum.ScaleType.Fit,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		ZIndex = 13,
+	}, TB)
+	nCorner(CloseBtn, 99)
+	nHover(CloseBtn, NC.CLOSEBG, NC.DECLINE)
 
-	CloseBtn.MouseEnter:Connect(function()
-		_ntw(CloseBtn, {BackgroundColor3 = NC.DECLINE}, 0.15)
-	end)
-	CloseBtn.MouseLeave:Connect(function()
-		_ntw(CloseBtn, {BackgroundColor3 = NC.CLOSEBG}, 0.15)
-	end)
+	-- Divider topbar/body
+	nMake("Frame", {
+		Size = UDim2.new(1,0,0,1),
+		Position = UDim2.new(0,0,0,NV.TOPBAR),
+		BackgroundColor3 = NC.DIVIDER,
+		BorderSizePixel = 0,
+		ZIndex = 11,
+	}, Card)
 
-	local DivTop = Instance.new("Frame")
-	DivTop.Size             = UDim2.new(1, 0, 0, 1)
-	DivTop.Position         = UDim2.new(0, 0, 0, N_TOPBAR_H)
-	DivTop.BackgroundColor3 = NC.DIVIDER
-	DivTop.BorderSizePixel  = 0
-	DivTop.ZIndex           = 2
-	DivTop.Parent           = Card
+	-- Body
+	local Body = nMake("Frame", {
+		Size = UDim2.new(1, 0, 0, bodyH),
+		Position = UDim2.new(0, 0, 0, NV.TOPBAR + 1),
+		BackgroundTransparency = 1,
+		ZIndex = 11,
+	}, Card)
 
-	local Body = Instance.new("Frame")
-	Body.Size                   = UDim2.new(1, 0, 0, BODY_ACTUAL)
-	Body.Position               = UDim2.new(0, 0, 0, N_TOPBAR_H + 1)
-	Body.BackgroundTransparency = 1
-	Body.ZIndex                 = 2
-	Body.Parent                 = Card
-
+	-- Body icon (optional)
 	local IconFrame, IconImg
-	local msgOffsetX = N_PAD
-
-	if hasIconBody then
-		IconFrame = Instance.new("Frame")
-		IconFrame.Size             = UDim2.new(0, N_ICON_SZ, 0, N_ICON_SZ)
-		IconFrame.Position         = UDim2.new(0, N_PAD, 0.5, 0)
-		IconFrame.AnchorPoint      = Vector2.new(0, 0.5)
-		IconFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 20)
-		IconFrame.BorderSizePixel  = 0
-		IconFrame.ZIndex           = 3
-		IconFrame.Parent           = Body
-		_nCorner(IconFrame, 10)
-		_nStroke(IconFrame, NC.ACCENT, 1)
-
-		IconImg = Instance.new("ImageLabel")
-		IconImg.Size                   = UDim2.new(0.62, 0, 0.62, 0)
-		IconImg.AnchorPoint            = Vector2.new(0.5, 0.5)
-		IconImg.Position               = UDim2.new(0.5, 0, 0.5, 0)
-		IconImg.BackgroundTransparency = 1
-		IconImg.Image                  = iconBody
-		IconImg.ImageColor3            = NC.ACCENT
-		IconImg.ZIndex                 = 4
-		IconImg.Parent                 = IconFrame
-
-		msgOffsetX = N_ICON_SZ + N_PAD + 8
+	local msgX = NV.PAD
+	if hasBIcon then
+		IconFrame = nMake("Frame", {
+			Size = UDim2.new(0, NV.ICON, 0, NV.ICON),
+			Position = UDim2.new(0, NV.PAD, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = Color3.fromRGB(18,18,20),
+			BorderSizePixel = 0,
+			ZIndex = 12,
+		}, Body)
+		nCorner(IconFrame, 10)
+		nStroke(IconFrame, NC.ACCENT, 1)
+		IconImg = nMake("ImageLabel", {
+			Size = UDim2.new(0.62,0,0.62,0),
+			AnchorPoint = Vector2.new(0.5,0.5),
+			Position = UDim2.new(0.5,0,0.5,0),
+			BackgroundTransparency = 1,
+			Image = iconBody,
+			ImageColor3 = NC.ACCENT,
+			ZIndex = 13,
+		}, IconFrame)
+		msgX = NV.ICON + NV.PAD + 6
 	end
 
-	local MsgLbl = Instance.new("TextLabel")
-	MsgLbl.Size                   = UDim2.new(1, -(msgOffsetX + N_PAD), 1, -10)
-	MsgLbl.Position               = UDim2.new(0, msgOffsetX, 0, 5)
-	MsgLbl.BackgroundTransparency = 1
-	MsgLbl.Text                   = body
-	MsgLbl.Font                   = Enum.Font.Gotham
-	MsgLbl.TextSize               = math.floor(11 * N_SCALE)
-	MsgLbl.TextColor3             = NC.TXT_SEC
-	MsgLbl.TextWrapped            = true
-	MsgLbl.TextXAlignment         = Enum.TextXAlignment.Left
-	MsgLbl.TextYAlignment         = Enum.TextYAlignment.Top
-	MsgLbl.ZIndex                 = 3
-	MsgLbl.Parent                 = Body
+	-- Message
+	local MsgLbl = nMake("TextLabel", {
+		Size = UDim2.new(1, -(msgX + NV.PAD), 1, -8),
+		Position = UDim2.new(0, msgX, 0, 4),
+		BackgroundTransparency = 1,
+		Text = body,
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextColor3 = NC.TXT_SEC,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 12,
+	}, Body)
 
+	-- Progress divider (only when buttons or duration)
 	local DividerFill
-	if hasButtons or hasDuration then
-		local DividerBG = Instance.new("Frame")
-		DividerBG.Size             = UDim2.new(1, 0, 0, 2)
-		DividerBG.Position         = UDim2.new(0, 0, 0, N_TOPBAR_H + 1 + BODY_ACTUAL)
-		DividerBG.BackgroundColor3 = NC.DIVIDER
-		DividerBG.BorderSizePixel  = 0
-		DividerBG.ZIndex           = 3
-		DividerBG.ClipsDescendants = true
-		DividerBG.Parent           = Card
-
-		DividerFill = Instance.new("Frame")
-		DividerFill.Size             = UDim2.new(1, 0, 1, 0)
-		DividerFill.BackgroundColor3 = NC.ACCENT
-		DividerFill.BorderSizePixel  = 0
-		DividerFill.ZIndex           = 4
-		DividerFill.Parent           = DividerBG
+	if hasBtns or hasDur then
+		local db = nMake("Frame", {
+			Size = UDim2.new(1,0,0,2),
+			Position = UDim2.new(0,0,0, NV.TOPBAR + 1 + bodyH),
+			BackgroundColor3 = NC.DIVIDER,
+			BorderSizePixel = 0,
+			ZIndex = 11,
+			ClipsDescendants = true,
+		}, Card)
+		DividerFill = nMake("Frame", {
+			Size = UDim2.new(1,0,1,0),
+			BackgroundColor3 = NC.ACCENT,
+			BorderSizePixel = 0,
+			ZIndex = 12,
+		}, db)
 	end
 
-	local createdBtns = {}
-	if hasButtons then
-		local BtnContainer = Instance.new("Frame")
-		BtnContainer.Size                   = UDim2.new(1, 0, 0, BTN_ACTUAL)
-		BtnContainer.Position               = UDim2.new(0, 0, 0, N_TOPBAR_H + 1 + BODY_ACTUAL + 2)
-		BtnContainer.BackgroundTransparency = 1
-		BtnContainer.ZIndex                 = 3
-		BtnContainer.Parent                 = Card
+	-- Buttons (optional)
+	if hasBtns then
+		local bc = nMake("Frame", {
+			Size = UDim2.new(1,0,0,btnH),
+			Position = UDim2.new(0,0,0, NV.TOPBAR + 1 + bodyH + 2),
+			BackgroundTransparency = 1,
+			ZIndex = 11,
+		}, Card)
+		local bl = nMake("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 7),
+		}, bc)
 
-		local BtnLayout = Instance.new("UIListLayout")
-		BtnLayout.FillDirection       = Enum.FillDirection.Horizontal
-		BtnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		BtnLayout.VerticalAlignment   = Enum.VerticalAlignment.Center
-		BtnLayout.Padding             = UDim.new(0, math.floor(8 * N_SCALE))
-		BtnLayout.Parent              = BtnContainer
-
-		for i, bDef in ipairs(buttons) do
-			if i > 3 then break end
+		for i = 1, math.min(#buttons, 3) do
+			local bDef = buttons[i]
 			local bg = bDef.color or NC.NEUTRAL
-			local Btn = Instance.new("TextButton")
-			Btn.Size             = UDim2.new(0, N_BTN_W, 0, N_BTN_SZ)
-			Btn.BackgroundColor3 = bg
-			Btn.Text             = bDef.label or ("Botón " .. i)
-			Btn.Font             = Enum.Font.GothamBold
-			Btn.TextSize         = math.floor(11 * N_SCALE)
-			Btn.TextColor3       = Color3.fromRGB(255, 255, 255)
-			Btn.BorderSizePixel  = 0
-			Btn.AutoButtonColor  = false
-			Btn.ZIndex           = 4
-			Btn.Parent           = BtnContainer
-			_nCorner(Btn, 7)
-
-			local bs = Instance.new("UIStroke")
-			bs.Color        = Color3.new(1, 1, 1)
-			bs.Transparency = 0.88
-			bs.Thickness    = 1
-			bs.Parent       = Btn
-
-			local hoverColor = bg:Lerp(Color3.new(1, 1, 1), 0.18)
-			Btn.MouseEnter:Connect(function()
-				_ntw(Btn, {BackgroundColor3 = hoverColor}, 0.13)
-			end)
-			Btn.MouseLeave:Connect(function()
-				_ntw(Btn, {BackgroundColor3 = bg}, 0.13)
-			end)
+			local Btn = nBtn(bc, bg, bDef.label or ("Botón "..i), 10)
+			nHover(Btn, bg, bg:Lerp(Color3.new(1,1,1), 0.18))
 			Btn.MouseButton1Down:Connect(function()
-				_ntw(Btn, {Size = UDim2.new(0, N_BTN_W - 4, 0, N_BTN_SZ - 3)}, 0.09, Enum.EasingStyle.Quad)
+				ntw(Btn, {Size = UDim2.new(0, NV.BTN_W-4, 0, NV.BTN_SZ-2)}, 0.09, Enum.EasingStyle.Quad)
 			end)
 			Btn.MouseButton1Up:Connect(function()
-				_ntw(Btn, {Size = UDim2.new(0, N_BTN_W, 0, N_BTN_SZ)}, 0.14, Enum.EasingStyle.Back)
+				ntw(Btn, {Size = UDim2.new(0, NV.BTN_W, 0, NV.BTN_SZ)}, 0.14, Enum.EasingStyle.Back)
 			end)
 			Btn.MouseButton1Click:Connect(function()
 				if bDef.callback then task.spawn(bDef.callback) end
 			end)
-			createdBtns[i] = Btn
 		end
 	end
 
+	-- Sound (optional)
 	if sound then
-		local snd = Instance.new("Sound")
-		snd.SoundId = sound
-		snd.Volume  = 0.6
-		snd.Parent  = SG
+		local snd = nMake("Sound", {SoundId=sound, Volume=0.6}, gui)
 		snd:Play()
 		game:GetService("Debris"):AddItem(snd, 5)
 	end
 
-	local dragging, dragInput, dragStart, startPos
-	TB.InputBegan:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging  = true
-			dragStart = inp.Position
-			startPos  = Card.Position
-			inp.Changed:Connect(function()
-				if inp.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	TB.InputChanged:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseMovement then
-			dragInput = inp
-		end
-	end)
-	UserInputSvc_N.InputChanged:Connect(function(inp)
-		if inp == dragInput and dragging then
-			local d = inp.Position - dragStart
-			Card.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + d.X,
-				startPos.Y.Scale, startPos.Y.Offset + d.Y
-			)
-		end
-	end)
+	nDraggable(TB, Card)
 
-	local Notif         = {}
-	Notif._sg           = SG
-	Notif._card         = Card
-	Notif._title        = TitleLbl
-	Notif._msg          = MsgLbl
-	Notif._avaImg       = AvaImg
-	Notif._bodyIcon     = IconImg
-	Notif._divFill      = DividerFill
-	Notif._neonConn     = neonConn
-	Notif._alive        = true
-	Notif._buttons      = createdBtns
-	Notif._accLine      = AccLine
-	Notif._iconFrame    = IconFrame
+	-- Notif object
+	local Notif = {
+		_card = Card, _title = TitleLbl, _msg = MsgLbl,
+		_avaImg = AvaImg, _bodyIcon = IconImg,
+		_divFill = DividerFill, _neonConn = neonConn,
+		_iconFrame = IconFrame, _alive = true,
+	}
 
 	local function fallClose(cb)
 		if not Notif._alive then return end
 		Notif._alive = false
 		local cur = Card.Position
-
-		_ntw(Card, {
-			Position = UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset - math.floor(12 * N_SCALE)),
-			Rotation = -2,
-		}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
+		ntw(Card, {Position=UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset-10), Rotation=-2}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		task.wait(0.17)
-
-		_ntw(Card, {
-			Position = UDim2.new(1, N_W + 80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H * 0.55)),
-			Rotation = 22,
-		}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-
-		_ntw(Card, {BackgroundTransparency = 0.5}, 0.35, Enum.EasingStyle.Linear)
-
+		ntw(Card, {Position=UDim2.new(1, NV.W+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		ntw(Card, {BackgroundTransparency=0.5}, 0.35, Enum.EasingStyle.Linear)
 		task.delay(0.46, function()
 			neonConn:Disconnect()
 			if cb then pcall(cb) end
-			SG:Destroy()
+			Card:Destroy()
 		end)
 	end
 
+	-- Slide in
 	task.delay(0.05, function()
-		_ntw(Card,
-			{Position = UDim2.new(1, -(N_W + 16), 1, -(CARD_H + 16))},
-			0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out
-		)
+		ntw(Card, {Position=UDim2.new(1, -(NV.W+16), 1, -(CARD_H+16))}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 	end)
 
-	if hasDuration and DividerFill then
-		_ntw(DividerFill, {Size = UDim2.new(0, 0, 1, 0)}, duration, Enum.EasingStyle.Linear)
+	-- Auto-close timer
+	if hasDur and DividerFill then
+		ntw(DividerFill, {Size=UDim2.new(0,0,1,0)}, duration, Enum.EasingStyle.Linear)
 		task.delay(duration, function()
 			if Notif._alive then fallClose() end
 		end)
@@ -1279,15 +1241,8 @@ function APTX:Notify(params)
 		if Notif._alive then fallClose() end
 	end)
 
-	function Notif:Destroy()
-		if not self._alive then return end
-		fallClose()
-	end
-
-	function Notif:Close(callback)
-		if not self._alive then return end
-		fallClose(callback)
-	end
+	function Notif:Destroy() if self._alive then fallClose() end end
+	function Notif:Close(cb) if self._alive then fallClose(cb) end end
 
 	function Notif:Edit(p)
 		if not self._alive then return end
@@ -1297,32 +1252,24 @@ function APTX:Notify(params)
 		if p["topbar-icon"]  and self._avaImg   then self._avaImg.Image   = p["topbar-icon"]  end
 		if p["content-icon"] and self._bodyIcon then self._bodyIcon.Image = p["content-icon"] end
 		if p.resetTimer and p.resetTimer > 0 and self._divFill then
-			self._divFill.Size = UDim2.new(1, 0, 1, 0)
-			_ntw(self._divFill, {Size = UDim2.new(0, 0, 1, 0)}, p.resetTimer, Enum.EasingStyle.Linear)
-			task.delay(p.resetTimer, function()
-				if self._alive then fallClose() end
-			end)
+			self._divFill.Size = UDim2.new(1,0,1,0)
+			ntw(self._divFill, {Size=UDim2.new(0,0,1,0)}, p.resetTimer, Enum.EasingStyle.Linear)
+			task.delay(p.resetTimer, function() if self._alive then fallClose() end end)
 		end
 	end
 
-	function Notif:Flash(flashColor)
+	function Notif:Flash(c)
 		if not self._alive then return end
 		local s = self._card:FindFirstChildOfClass("UIStroke")
-		if s then
-			local orig = s.Color
-			s.Color = flashColor or Color3.new(1, 1, 1)
-			_ntw(s, {Color = orig}, 0.6, Enum.EasingStyle.Quad)
-		end
+		if s then local o=s.Color; s.Color=c or Color3.new(1,1,1); ntw(s,{Color=o},0.6,Enum.EasingStyle.Quad) end
 	end
 
 	function Notif:SetBody(text, pulse)
 		if not self._alive then return end
 		self._msg.Text = text or ""
 		if pulse then
-			_ntw(self._msg, {TextTransparency = 0.6}, 0.1)
-			task.delay(0.15, function()
-				if self._alive then _ntw(self._msg, {TextTransparency = 0}, 0.25) end
-			end)
+			ntw(self._msg, {TextTransparency=0.6}, 0.1)
+			task.delay(0.15, function() if self._alive then ntw(self._msg,{TextTransparency=0},0.25) end end)
 		end
 	end
 
@@ -1332,16 +1279,13 @@ function APTX:Notify(params)
 			local s = self._iconFrame:FindFirstChildOfClass("UIStroke")
 			if s then s.Color = color end
 		end
-		self._accLine.BackgroundColor3 = color
 	end
 
 	function Notif:Shake()
 		if not self._alive then return end
 		local orig = self._card.Position
-		for _, ox in ipairs({8, -8, 6, -6, 3, -3, 0}) do
-			_ntw(self._card, {
-				Position = UDim2.new(orig.X.Scale, orig.X.Offset + ox, orig.Y.Scale, orig.Y.Offset)
-			}, 0.04, Enum.EasingStyle.Quad)
+		for _, ox in ipairs({8,-8,6,-6,3,-3,0}) do
+			ntw(self._card, {Position=UDim2.new(orig.X.Scale, orig.X.Offset+ox, orig.Y.Scale, orig.Y.Offset)}, 0.04, Enum.EasingStyle.Quad)
 			task.wait(0.045)
 		end
 		self._card.Position = orig
