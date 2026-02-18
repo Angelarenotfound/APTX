@@ -191,7 +191,7 @@ local function tpexe()
 
         sit = RunService.Heartbeat:Connect(function()
             if selectedPlayer and Players:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
-                getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 2.2)
+                getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
             else
                 warn("[tpexe] Condición perdida, desconectando sit")
                 if sit then sit:Disconnect() end
