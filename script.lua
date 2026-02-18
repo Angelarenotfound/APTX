@@ -154,7 +154,43 @@ end)
 
 
 -- SURVIVORS FUNCTIONS
+local function tpexe()
+    local selectedPlayer = nil
+    for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
+        local playerObj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(playerName.Name)
+        if playerObj and playerObj:GetAttribute("Team") == "EXE" then
+            selectedPlayer = playerName
+            break
+        end
+    end
 
+    if not selectedPlayer then
+        warn("[tpexe] No se encontró ningún jugador con Team = EXE")
+        return
+    end
+
+    print("[tpexe] Jugador EXE encontrado: " .. selectedPlayer.Name)
+
+    if sit then sit:Disconnect() end
+    target = selectedPlayer
+
+    if l.Character and l.Character:FindFirstChildOfClass("Humanoid") then
+        l.Character:FindFirstChildOfClass("Humanoid").Sit = true
+        print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
+
+        sit = rs.Heartbeat:Connect(function()
+            if p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and getRoot(selectedPlayer.Character) and l.Character and getRoot(l.Character) and l.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(l.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1.2, 2.2)
+            else
+                warn("[tpexe] Condición perdida, desconectando sit")
+                if sit then sit:Disconnect() end
+                target = nil
+            end
+        end)
+    else
+        warn("[tpexe] l.Character o Humanoid no disponible")
+    end
+end
 
 
 
