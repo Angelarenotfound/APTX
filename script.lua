@@ -127,11 +127,16 @@ APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
     local n = APTX:Notify({
     title          = "Infinite Jump",
-    content        = "Enabled correctly",
+    content        = state,
     ["topbar-icon"]  = Icons["check"],
+    ["content-icon"] = Icons["book-open"],
+    buttons = {
+        { label = "Okay", color = Color3.fromRGB(88,101,242), callback = function() n:Destroy() end }
+    },
     duration = 5,
     type = "success"
 })
+
 
     local plr = player
     
