@@ -14,7 +14,7 @@ _G.tpevesit = nil
 local chractive
 local chr
 texe = false
-
+xchr = false
 
 -- MODULES
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
@@ -47,6 +47,8 @@ local function gameState()
     local gstate = Workspace.GameProperties.State.Value
     return gstate
 end
+
+
 -- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
 
@@ -214,6 +216,46 @@ APTX:Toggle(combat, "Auto metal/sonic stun", "send", false, function(state)
 end)
 
 
+-- Killers FUNCTIONS
+local function xcharge()
+    local survivorPlayers = {}
+    
+    for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
+        local playerObj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(playerName.Name)
+        if playerObj and playerObj:GetAttribute("Team") == "Survivors" then
+            table.insert(survivorPlayers, playerName)
+        end
+    end
+
+    if #survivorPlayers == 0 then
+        warn("[tpexe] No se encontró ningún jugador con Team = Survivors")
+        return
+    end
+
+    local selectedPlayer = survivorPlayers[math.random(1, #survivorPlayers)]
+    print("[tpexe] Jugador Survivor aleatorio seleccionado: " .. selectedPlayer.Name)
+
+    if sit then sit:Disconnect() end
+    target = selectedPlayer
+
+    if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+        player.Character:FindFirstChildOfClass("Humanoid").Sit = true
+        print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
+
+        sit = RunService.Heartbeat:Connect(function()
+            if selectedPlayer and Players:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
+            else
+                warn("[tpexe] Condición perdida, desconectando sit")
+                if sit then sit:Disconnect() end
+                target = nil
+            end
+        end)
+    else
+        warn("[tpexe] player.Character o Humanoid no disponible")
+    end
+end
+
 
 -- Killers section
 local s = nil
@@ -245,14 +287,22 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     s = character.ChildAdded:Connect(onAdd)
 end)
 
+
+
+
+-- KILLER SECTION OPTIONS
 APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
     local plrs = Players:GetPlayers()
     tpeve(0.5, plrs)
 end)
+APTX:Toggle(killer, "Auto 2011x charge", "send", false, function(state)
+    xchr = state
+end)
 
 
--- SERVICES
-local UIS = game:GetService("UserInputService")
+
+
+
 
 -- UTILS VARS
 local flyspeed = 1
@@ -275,32 +325,6 @@ local function toggleFly()
     setFly(not flystate)
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Unknown then return end
--- FLY FUNCTION
-    if listening then
-        flyKeybind = input.KeyCode
-        listening = false
-        
-        return
-    end
-
-    if flyKeybind and input.KeyCode == flyKeybind then
-        toggleFly()
-    end
-
---ENDS FLY FUNCTION
-
--- TP METAL & SONIC
-    local key = input.KeyCode
-    if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe and gameState() == "ING" then
-        local char = getChar()
-        if char == "Sonic" or char == "MetalSonic" then
-            tpexe()
-            end
-        end
-end)
 
 APTX:Button(utils, "Set Fly Keybind", "key", function()
     if listening then return end
@@ -350,6 +374,48 @@ Workspace.GameProperties.State.Changed:Connect(function(value)
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
             print('fired con:')
             print('hecho')
+        end
+    end
+end)
+
+-- KEY LISTENER
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Unknown then return end
+    
+    local key = input.KeyCode
+    
+    -- FLY FUNCTION
+    if listening then
+        flyKeybind = key
+        listening = false
+        return
+    end
+
+    if flyKeybind and key == flyKeybind then
+        toggleFly()
+    end
+    -- ENDS FLY FUNCTION
+
+    -- Snapshot state
+    local state = gameState()
+    if state ~= "ING" then return end
+
+    local char = getChar()
+
+    -- TP METAL & SONIC
+    if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe then
+        if char == "Sonic" or char == "MetalSonic" then
+            task.wait(1.5)
+            tpexe()
+        end
+    end
+
+    -- 2011X CHARGE
+    if (key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1) and xchr then
+        if char == "2011x" then
+            task.wait(3)
+            xcharge()
         end
     end
 end)
