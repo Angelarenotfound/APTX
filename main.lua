@@ -884,7 +884,7 @@ local NV = {
 -- Stack tracking: active notifications listed bottom-to-top
 local NotifStack = {}
 local NOTIF_GAP  = 6   -- gap between stacked notifications
-local NOTIF_RIGHT_MARGIN = 5  -- 30% closer to right edge (was ~16px, now ~5px)
+local NOTIF_RIGHT_MARGIN = 0  -- 30% closer to right edge (was ~16px, now ~5px)
 
 local function ntw(obj, props, t, style, dir)
 	TweenService:Create(obj,
