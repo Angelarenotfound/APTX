@@ -856,24 +856,6 @@ end
 
 local RunService = game:GetService("RunService")
 
-local nStack = {}
-local nGAP = 8
-
-local function nRepos()
-	local off = 0
-	for i = #nStack, 1, -1 do
-		local e = nStack[i]
-		if e.alive and e.card and e.card.Parent then
-			local h = e.h
-			local y = -(off + h)
-			ntw(e.card, {Position = UDim2.new(1, -e.w, 1, y)}, 0.3, Enum.EasingStyle.Quart)
-			off = off + h + nGAP
-		else
-			table.remove(nStack, i)
-		end
-	end
-end
-
 local N_PALETTES = {
 	warning = { Color3.fromRGB(255,210,0),   Color3.fromRGB(255,120,0)   },
 	success = { Color3.fromRGB(0,255,110),   Color3.fromRGB(0,200,50)    },
@@ -1003,7 +985,6 @@ function APTX:Notify(params)
 	local sound      = params.sound
 	local buttons    = params.buttons
 	local notifType  = params.type or "neutral"
-	local scale      = params.size or 1
 
 	local hasTIcon   = iconTop  and iconTop  ~= ""
 	local hasBIcon   = iconBody and iconBody ~= ""
@@ -1012,8 +993,7 @@ function APTX:Notify(params)
 
 	local bodyH  = hasBIcon and NV.BODY or NV.BODY_SLIM
 	local btnH   = hasBtns  and NV.BTN_H or 0
-	local CARD_H = math.floor((NV.TOPBAR + 1 + bodyH + (hasBtns and (2 + btnH) or 6)) * scale)
-	local CARD_W = math.floor(NV.W * scale)
+	local CARD_H = NV.TOPBAR + 1 + bodyH + (hasBtns and (2 + btnH) or 6)
 
 	-- Use the existing APTX ScreenGui so no extra ScreenGui is created per notification
 	assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
@@ -1022,8 +1002,8 @@ function APTX:Notify(params)
 	-- Card
 	local Card = nMake("Frame", {
 		Name = "NotifCard_"..tostring(tick()),
-		Size = UDim2.new(0, CARD_W, 0, CARD_H),
-		Position = UDim2.new(1, CARD_W + 20, 1, -(CARD_H)),
+		Size = UDim2.new(0, NV.W, 0, CARD_H),
+		Position = UDim2.new(1, NV.W + 20, 1, -(CARD_H + 16)),
 		BackgroundColor3 = NC.BG,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
@@ -1080,7 +1060,7 @@ function APTX:Notify(params)
 		BackgroundTransparency = 1,
 		Text = title,
 		Font = Enum.Font.GothamBold,
-		TextSize = math.floor(11 * scale),
+		TextSize = 11,
 		TextColor3 = NC.TXT_PRI,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -1153,7 +1133,7 @@ function APTX:Notify(params)
 		BackgroundTransparency = 1,
 		Text = body,
 		Font = Enum.Font.Gotham,
-		TextSize = math.floor(10 * scale),
+		TextSize = 10,
 		TextColor3 = NC.TXT_SEC,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1198,7 +1178,7 @@ function APTX:Notify(params)
 		for i = 1, math.min(#buttons, 3) do
 			local bDef = buttons[i]
 			local bg = bDef.color or NC.NEUTRAL
-			local Btn = nBtn(bc, bg, bDef.label or ("Botón "..i), math.floor(10 * scale))
+			local Btn = nBtn(bc, bg, bDef.label or ("Botón "..i), 10)
 			nHover(Btn, bg, bg:Lerp(Color3.new(1,1,1), 0.18))
 			Btn.MouseButton1Down:Connect(function()
 				ntw(Btn, {Size = UDim2.new(0, NV.BTN_W-4, 0, NV.BTN_SZ-2)}, 0.09, Enum.EasingStyle.Quad)
@@ -1221,6 +1201,7 @@ function APTX:Notify(params)
 
 	nDraggable(TB, Card)
 
+	-- Notif object
 	local Notif = {
 		_card = Card, _title = TitleLbl, _msg = MsgLbl,
 		_avaImg = AvaImg, _bodyIcon = IconImg,
@@ -1228,34 +1209,24 @@ function APTX:Notify(params)
 		_iconFrame = IconFrame, _alive = true,
 	}
 
-	local entry = {card = Card, alive = true, h = CARD_H, w = CARD_W}
-	table.insert(nStack, entry)
-
 	local function fallClose(cb)
 		if not Notif._alive then return end
 		Notif._alive = false
-		entry.alive = false
 		local cur = Card.Position
 		ntw(Card, {Position=UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset-10), Rotation=-2}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		task.wait(0.17)
-		ntw(Card, {Position=UDim2.new(1, CARD_W+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		ntw(Card, {Position=UDim2.new(1, NV.W+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		ntw(Card, {BackgroundTransparency=0.5}, 0.35, Enum.EasingStyle.Linear)
 		task.delay(0.46, function()
 			neonConn:Disconnect()
-			for i = #nStack, 1, -1 do
-				if nStack[i] == entry then table.remove(nStack, i) break end
-			end
 			if cb then pcall(cb) end
 			Card:Destroy()
-			nRepos()
 		end)
 	end
 
-	nRepos()
-
 	-- Slide in
 	task.delay(0.05, function()
-		nRepos()
+		ntw(Card, {Position=UDim2.new(1, -(NV.W+16), 1, -(CARD_H+16))}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 	end)
 
 	-- Auto-close timer
