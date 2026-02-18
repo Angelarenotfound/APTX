@@ -16,7 +16,6 @@ local chr
 texe = false
 xchr = false
 mhealing = false
-local n
 -- MODULES
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
 local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/main.lua"))()
@@ -124,12 +123,13 @@ end)
 
 APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by the anticheat")
 
+local n
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
     local n = APTX:Notify({
     title          = "Infinite Jump",
     content        = "ni idea bro",
-    size = 0.5,
+    size = 0.9,
     ["topbar-icon"]  = Icons["check"],
     ["content-icon"] = Icons["book-open"],
     buttons = {
