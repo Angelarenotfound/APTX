@@ -34,7 +34,10 @@ local function getRoot(character)
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 end
 
-
+local function getChar()
+    local rchar = "so"
+    return rchar
+end
 
 -- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
@@ -174,13 +177,13 @@ local function tpexe()
     if sit then sit:Disconnect() end
     target = selectedPlayer
 
-    if l.Character and l.Character:FindFirstChildOfClass("Humanoid") then
-        l.Character:FindFirstChildOfClass("Humanoid").Sit = true
+    if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+        player.Character:FindFirstChildOfClass("Humanoid").Sit = true
         print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
 
         sit = rs.Heartbeat:Connect(function()
-            if selectedPlayer and p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and l.Character and l.Character:FindFirstChild("HumanoidRootPart") and l.Character:FindFirstChildOfClass("Humanoid") and l.Character:FindFirstChildOfClass("Humanoid").Sit == true then
-                getRoot(l.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1.2, 2.2)
+            if selectedPlayer and p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 2.2)
             else
                 warn("[tpexe] Condición perdida, desconectando sit")
                 if sit then sit:Disconnect() end
@@ -188,10 +191,9 @@ local function tpexe()
             end
         end)
     else
-        warn("[tpexe] l.Character o Humanoid no disponible")
+        warn("[tpexe] player.Character o Humanoid no disponible")
     end
 end
-
 
 
 -- Survivors section
