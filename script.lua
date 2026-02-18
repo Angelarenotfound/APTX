@@ -126,7 +126,7 @@ APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by
 local n
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
-    local n = APTX:Notify({
+    n = APTX:Notify({
     title          = "Infinite Jump",
     content        = "ni idea bro",
     size = 0.9,
