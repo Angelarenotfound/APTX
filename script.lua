@@ -283,7 +283,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 --ENDS FLY FUNCTION
 
 -- TP METAL & SONIC
-    if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.L1 then
+    if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonL1 then
         if texe then
             tpexe()
             end
