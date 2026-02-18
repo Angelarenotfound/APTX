@@ -22,6 +22,7 @@ local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/A
 local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/main.lua"))()
 local tpeve = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/kolossos-charge.lua"))()
 local fly, unfly = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/fly.lua"))()
+local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))()
 
 -- START MODULES
 local cream = CreamModule:Create()
@@ -124,6 +125,14 @@ end)
 APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by the anticheat")
 
 APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
+    local n = APTX:Notify({
+    title          = "Infinite Jump",
+    content        = "Enabled correctly",
+    ["topbar-icon"]  = Icons["check"],
+    duration = 5,
+    type = "success"
+})
+
     local plr = player
     
     if state then
