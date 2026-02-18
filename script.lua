@@ -13,7 +13,8 @@ _G.player, player = Players.LocalPlayer, Players.LocalPlayer
 _G.tpevesit = nil
 local chractive
 local chr
-
+local team = Workspace.Players:WaitForChild(player.Name):GetAttribute("Team")
+texe = false
 
 
 -- MODULES
@@ -71,7 +72,7 @@ APTX:Slider(playersec, "Speed (game sync)", "star", 2, 100, 0, function(value)
     at:SetAttribute("lockSpeed", value)
 end)
 
-APTX:Label(playersec, "Speed (game sync) It can be automatically turned off by the anticheat")
+APTX:Label(playersec, "Speed (game sync) It can affect the skills")
 
 APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
     pcall(function() 
@@ -152,11 +153,56 @@ end)
 
 
 
+-- SURVIVORS FUNCTIONS
+local function tpexe()
+    local selectedPlayer = nil
+    for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
+        local playerObj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(playerName.Name)
+        if playerObj and playerObj:GetAttribute("Team") == "EXE" then
+            selectedPlayer = playerName
+            break
+        end
+    end
+
+    if not selectedPlayer then
+        warn("[tpexe] No se encontró ningún jugador con Team = EXE")
+        return
+    end
+
+    print("[tpexe] Jugador EXE encontrado: " .. selectedPlayer.Name)
+
+    if sit then sit:Disconnect() end
+    target = selectedPlayer
+
+    if l.Character and l.Character:FindFirstChildOfClass("Humanoid") then
+        l.Character:FindFirstChildOfClass("Humanoid").Sit = true
+        print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
+
+        sit = rs.Heartbeat:Connect(function()
+            if p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and getRoot(selectedPlayer.Character) and l.Character and getRoot(l.Character) and l.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(l.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1.2, 2.2)
+            else
+                warn("[tpexe] Condición perdida, desconectando sit")
+                if sit then sit:Disconnect() end
+                target = nil
+            end
+        end)
+    else
+        warn("[tpexe] l.Character o Humanoid no disponible")
+    end
+end
+
+
 
 -- Survivors section
 APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
     cream.Enabled = state
 end)
+
+APTX:Toggle(combat, "Auto metal/sonic stun", "send", false, function(state)
+    texe = state
+end)
+
 
 
 -- Killers section
@@ -222,7 +268,7 @@ end
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.Unknown then return end
-    
+-- FLY FUNCTION
     if listening then
         flyKeybind = input.KeyCode
         listening = false
@@ -232,6 +278,15 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     if flyKeybind and input.KeyCode == flyKeybind then
         toggleFly()
+    end
+
+--ENDS FLY FUNCTION
+
+-- TP METAL & SONIC
+    if input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.L1 then
+        if texe then
+            tpexe()
+            end
     end
 end)
 
@@ -276,13 +331,13 @@ end)
 
 -- LISTINERS
 Workspace.GameProperties.State.Changed:Connect(function(value)
+    task.wait(7)
     if value == "SEC" then
         if chractive then
-            task.wait(6)
             local args = { chr }
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
             print('fired con:')
-            print(chr)
+            print('hecho')
         end
     end
 end)
