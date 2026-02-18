@@ -883,7 +883,8 @@ local NV = {
 
 -- Stack tracking: active notifications listed bottom-to-top
 local NotifStack = {}
-local NOTIF_GAP  = 6  -- gap between stacked notifications
+local NOTIF_GAP  = 6   -- gap between stacked notifications
+local NOTIF_RIGHT_MARGIN = 5  -- 30% closer to right edge (was ~16px, now ~5px)
 
 local function ntw(obj, props, t, style, dir)
 	TweenService:Create(obj,
@@ -978,14 +979,16 @@ end
 
 -- Recalculate positions for all active stacked notifications
 local function repositionStack()
-	local bottomOffset = 0
+	local bottomOffset = NOTIF_RIGHT_MARGIN  -- small bottom margin
 	for idx = 1, #NotifStack do
 		local entry = NotifStack[idx]
 		if entry and entry._alive and entry._card and entry._card.Parent then
 			local scaledH = entry._scaledH
+			local scaledW = entry._scaledW or math.floor(NV.W)
+			local targetX = -(scaledW + NOTIF_RIGHT_MARGIN)
 			local targetY = -(bottomOffset + scaledH)
 			ntw(entry._card, {
-				Position = UDim2.new(1, 0, 1, targetY)
+				Position = UDim2.new(1, targetX, 1, targetY)
 			}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 			bottomOffset = bottomOffset + scaledH + NOTIF_GAP
 		end
@@ -1266,6 +1269,7 @@ function APTX:Notify(params)
 		_divFill = DividerFill, _neonConn = neonConn,
 		_iconFrame = IconFrame, _alive = true,
 		_scaledH = CARD_H,  -- store for stack repositioning
+		_scaledW = sW,      -- store width for stack repositioning
 	}
 
 	-- Add to stack
