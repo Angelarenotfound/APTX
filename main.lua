@@ -74,7 +74,7 @@ function APTX:Config(title, draggable, devmode)
     APTX.DevMode = devmode == true
     
     log("Inicializando APTX GUI...")
-    log("Título:", APTX.Title)
+    log("Titulo:", APTX.Title)
     log("Draggable:", APTX.Draggable)
     log("DevMode:", APTX.DevMode)
     
@@ -289,7 +289,7 @@ function APTX:Destroy()
 end
 
 function APTX:Section(text, icon, default)
-    log("Creando sección:", text)
+    log("Creando seccion:", text)
     
     local section = {
         Name = text,
@@ -371,7 +371,7 @@ function APTX:Section(text, icon, default)
 end
 
 function APTX:SelectSection(name)
-    log("Seleccionando sección:", name)
+    log("Seleccionando seccion:", name)
     
     for _, section in ipairs(APTX.Sections) do
         if section.Name == name then
@@ -405,11 +405,11 @@ end
 function APTX:Button(sectionName, text, icon, callback)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
-    log("Creando botón:", text, "en sección:", sectionName)
+    log("Creando boton:", text, "en seccion:", sectionName)
     
     local button = Instance.new("TextButton")
     button.Name = text
@@ -437,7 +437,7 @@ function APTX:Button(sectionName, text, icon, callback)
     label.Parent = button
     
     button.MouseButton1Click:Connect(function()
-        log("Click en botón:", text)
+        log("Click en boton:", text)
         tween(button, {BackgroundColor3 = Theme.Green}, 0.1)
         wait(0.15)
         tween(button, {BackgroundColor3 = Theme.Gray}, 0.1)
@@ -458,7 +458,7 @@ end
 function APTX:Toggle(sectionName, text, icon, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
@@ -529,7 +529,7 @@ end
 function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
@@ -644,11 +644,11 @@ end
 function APTX:Menu(sectionName, text, placeholder, icon, options, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
-    log("Creando menú:", text)
+    log("Creando menu:", text)
     
     local isOpen = false
     local selected = default or options[1]
@@ -702,7 +702,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
     arrow.Size = UDim2.new(0, 20, 1, 0)
     arrow.Position = UDim2.new(1, -22, 0, 0)
     arrow.BackgroundTransparency = 1
-    arrow.Text = "▼"
+    arrow.Text = "v"
     arrow.TextColor3 = Theme.White
     arrow.Font = Enum.Font.Gotham
     arrow.TextSize = 10
@@ -738,7 +738,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         optionBtn.MouseButton1Click:Connect(function()
             selected = option
             selectedLabel.Text = selected
-            log("Menú selección:", option)
+            log("Menu seleccion:", option)
             
             if callback then callback(selected) end
             
@@ -773,7 +773,7 @@ end
 function APTX:Input(sectionName, text, icon, placeholder, callback)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
@@ -831,7 +831,7 @@ end
 function APTX:Label(sectionName, text)
     local section = APTX:GetSection(sectionName)
     if not section then 
-        log("ERROR: Sección no encontrada:", sectionName)
+        log("ERROR: Seccion no encontrada:", sectionName)
         return 
     end
     
@@ -851,28 +851,10 @@ function APTX:Label(sectionName, text)
 end
 
 -- ══════════════════════════════════════════════════════════════
---  APTX:Notify
+--  APTX:Notify  (with size, flush-right, stackable)
 -- ══════════════════════════════════════════════════════════════
 
 local RunService = game:GetService("RunService")
-
-local nStack = {}
-local nGAP = 8
-
-local function nRepos()
-	local off = 0
-	for i = #nStack, 1, -1 do
-		local e = nStack[i]
-		if e.alive and e.card and e.card.Parent then
-			local h = e.h
-			local y = -(off + h)
-			ntw(e.card, {Position = UDim2.new(1, -e.w, 1, y)}, 0.3, Enum.EasingStyle.Quart)
-			off = off + h + nGAP
-		else
-			table.remove(nStack, i)
-		end
-	end
-end
 
 local N_PALETTES = {
 	warning = { Color3.fromRGB(255,210,0),   Color3.fromRGB(255,120,0)   },
@@ -898,6 +880,10 @@ local NV = {
 	BTN_H  = 41,  PAD    = 12, BTN_W = 102, BTN_SZ = 26,
 	ICON   = 31,  AVA    = 17,
 }
+
+-- Stack tracking: active notifications listed bottom-to-top
+local NotifStack = {}
+local NOTIF_GAP  = 6  -- gap between stacked notifications
 
 local function ntw(obj, props, t, style, dir)
 	TweenService:Create(obj,
@@ -944,7 +930,7 @@ local function nImg(parent, img, props)
 		BackgroundTransparency = 1,
 		Image = img or "",
 		ScaleType = Enum.ScaleType.Fit,
-	}, nil) -- set props below then parent
+	}, nil)
 end
 
 local function nBtn(parent, bg, text, textSize)
@@ -990,6 +976,33 @@ local function nDraggable(handle, card)
 	end)
 end
 
+-- Recalculate positions for all active stacked notifications
+local function repositionStack()
+	local bottomOffset = 0
+	for idx = 1, #NotifStack do
+		local entry = NotifStack[idx]
+		if entry and entry._alive and entry._card and entry._card.Parent then
+			local scaledH = entry._scaledH
+			local targetY = -(bottomOffset + scaledH)
+			ntw(entry._card, {
+				Position = UDim2.new(1, 0, 1, targetY)
+			}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			bottomOffset = bottomOffset + scaledH + NOTIF_GAP
+		end
+	end
+end
+
+-- Remove a notification from the stack and reposition
+local function removeFromStack(notif)
+	for i = #NotifStack, 1, -1 do
+		if NotifStack[i] == notif then
+			table.remove(NotifStack, i)
+			break
+		end
+	end
+	repositionStack()
+end
+
 function APTX:Notify(params)
 	assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
 	assert(params.title,            "[APTX:Notify] params.title es requerido")
@@ -1003,47 +1016,59 @@ function APTX:Notify(params)
 	local sound      = params.sound
 	local buttons    = params.buttons
 	local notifType  = params.type or "neutral"
-	local scale      = params.size or 1
+	local size       = params.size or 1  -- NEW: scale factor (1 = default, 0.5 = half, etc.)
 
 	local hasTIcon   = iconTop  and iconTop  ~= ""
 	local hasBIcon   = iconBody and iconBody ~= ""
 	local hasBtns    = buttons  and #buttons  > 0
 	local hasDur     = duration and duration  > 0
 
-	local bodyH  = hasBIcon and NV.BODY or NV.BODY_SLIM
-	local btnH   = hasBtns  and NV.BTN_H or 0
-	local CARD_H = math.floor((NV.TOPBAR + 1 + bodyH + (hasBtns and (2 + btnH) or 6)) * scale)
-	local CARD_W = math.floor(NV.W * scale)
+	-- Scale all dimensions by the size parameter
+	local sW      = math.floor(NV.W * size)
+	local sTOPBAR = math.floor(NV.TOPBAR * size)
+	local sBODY   = math.floor((hasBIcon and NV.BODY or NV.BODY_SLIM) * size)
+	local sBTN_H  = math.floor(NV.BTN_H * size)
+	local sPAD    = math.floor(NV.PAD * size)
+	local sBTN_W  = math.floor(NV.BTN_W * size)
+	local sBTN_SZ = math.floor(NV.BTN_SZ * size)
+	local sICON   = math.floor(NV.ICON * size)
+	local sAVA    = math.floor(NV.AVA * size)
 
-	-- Use the existing APTX ScreenGui so no extra ScreenGui is created per notification
+	local btnH   = hasBtns  and sBTN_H or 0
+	local CARD_H = sTOPBAR + 1 + sBODY + (hasBtns and (2 + btnH) or math.floor(6 * size))
+
+	-- Font sizes scaled
+	local titleFontSize = math.max(8, math.floor(11 * size))
+	local bodyFontSize  = math.max(7, math.floor(10 * size))
+	local btnFontSize   = math.max(7, math.floor(10 * size))
+
 	assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
 	local gui = APTX.GUI
 
-	-- Card
+	-- Card starts off-screen to the right, flush to the right edge (offset 0)
 	local Card = nMake("Frame", {
 		Name = "NotifCard_"..tostring(tick()),
-		Size = UDim2.new(0, CARD_W, 0, CARD_H),
-		Position = UDim2.new(1, CARD_W + 20, 1, -(CARD_H)),
+		Size = UDim2.new(0, sW, 0, CARD_H),
+		Position = UDim2.new(1, sW + 20, 1, -CARD_H),  -- off-screen right
 		BackgroundColor3 = NC.BG,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
 		ZIndex = 10,
 	}, gui)
-	nCorner(Card, 13)
+	nCorner(Card, math.floor(13 * size))
 	local neonConn = nNeon(Card, notifType)
 
 	-- TopBar
 	local TB = nMake("Frame", {
-		Size = UDim2.new(1, 0, 0, NV.TOPBAR),
+		Size = UDim2.new(1, 0, 0, sTOPBAR),
 		BackgroundColor3 = NC.TOPBAR,
 		BorderSizePixel = 0,
 		ZIndex = 11,
 	}, Card)
-	nCorner(TB, 13)
-	-- patch to flatten bottom corners of topbar
+	nCorner(TB, math.floor(13 * size))
 	nMake("Frame", {
-		Size = UDim2.new(1, 0, 0, 13),
-		Position = UDim2.new(0, 0, 1, -13),
+		Size = UDim2.new(1, 0, 0, math.floor(13 * size)),
+		Position = UDim2.new(0, 0, 1, -math.floor(13 * size)),
 		BackgroundColor3 = NC.TOPBAR,
 		BorderSizePixel = 0,
 		ZIndex = 11,
@@ -1051,11 +1076,11 @@ function APTX:Notify(params)
 
 	-- TopBar icon (optional)
 	local AvaImg
-	local titleX = NV.PAD
+	local titleX = sPAD
 	if hasTIcon then
 		local af = nMake("Frame", {
-			Size = UDim2.new(0, NV.AVA, 0, NV.AVA),
-			Position = UDim2.new(0, NV.PAD, 0.5, 0),
+			Size = UDim2.new(0, sAVA, 0, sAVA),
+			Position = UDim2.new(0, sPAD, 0.5, 0),
 			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundColor3 = NC.ACCENT,
 			BorderSizePixel = 0,
@@ -1070,17 +1095,18 @@ function APTX:Notify(params)
 			ZIndex = 13,
 		}, af)
 		nCorner(AvaImg, 99)
-		titleX = NV.AVA + NV.PAD + 6
+		titleX = sAVA + sPAD + math.floor(6 * size)
 	end
 
 	-- Title
+	local closeBtnSize = math.floor(20 * size)
 	local TitleLbl = nMake("TextLabel", {
-		Size = UDim2.new(1, -(titleX + 30), 1, 0),
+		Size = UDim2.new(1, -(titleX + math.floor(30 * size)), 1, 0),
 		Position = UDim2.new(0, titleX, 0, 0),
 		BackgroundTransparency = 1,
 		Text = title,
 		Font = Enum.Font.GothamBold,
-		TextSize = math.floor(11 * scale),
+		TextSize = titleFontSize,
 		TextColor3 = NC.TXT_PRI,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -1089,8 +1115,8 @@ function APTX:Notify(params)
 
 	-- Close button
 	local CloseBtn = nMake("ImageButton", {
-		Size = UDim2.new(0, 20, 0, 20),
-		Position = UDim2.new(1, -26, 0.5, 0),
+		Size = UDim2.new(0, closeBtnSize, 0, closeBtnSize),
+		Position = UDim2.new(1, -(closeBtnSize + math.floor(6 * size)), 0.5, 0),
 		AnchorPoint = Vector2.new(0, 0.5),
 		BackgroundColor3 = NC.CLOSEBG,
 		Image = "rbxassetid://7072725342",
@@ -1106,7 +1132,7 @@ function APTX:Notify(params)
 	-- Divider topbar/body
 	nMake("Frame", {
 		Size = UDim2.new(1,0,0,1),
-		Position = UDim2.new(0,0,0,NV.TOPBAR),
+		Position = UDim2.new(0,0,0,sTOPBAR),
 		BackgroundColor3 = NC.DIVIDER,
 		BorderSizePixel = 0,
 		ZIndex = 11,
@@ -1114,25 +1140,25 @@ function APTX:Notify(params)
 
 	-- Body
 	local Body = nMake("Frame", {
-		Size = UDim2.new(1, 0, 0, bodyH),
-		Position = UDim2.new(0, 0, 0, NV.TOPBAR + 1),
+		Size = UDim2.new(1, 0, 0, sBODY),
+		Position = UDim2.new(0, 0, 0, sTOPBAR + 1),
 		BackgroundTransparency = 1,
 		ZIndex = 11,
 	}, Card)
 
 	-- Body icon (optional)
 	local IconFrame, IconImg
-	local msgX = NV.PAD
+	local msgX = sPAD
 	if hasBIcon then
 		IconFrame = nMake("Frame", {
-			Size = UDim2.new(0, NV.ICON, 0, NV.ICON),
-			Position = UDim2.new(0, NV.PAD, 0.5, 0),
+			Size = UDim2.new(0, sICON, 0, sICON),
+			Position = UDim2.new(0, sPAD, 0.5, 0),
 			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundColor3 = Color3.fromRGB(18,18,20),
 			BorderSizePixel = 0,
 			ZIndex = 12,
 		}, Body)
-		nCorner(IconFrame, 10)
+		nCorner(IconFrame, math.floor(10 * size))
 		nStroke(IconFrame, NC.ACCENT, 1)
 		IconImg = nMake("ImageLabel", {
 			Size = UDim2.new(0.62,0,0.62,0),
@@ -1143,17 +1169,17 @@ function APTX:Notify(params)
 			ImageColor3 = NC.ACCENT,
 			ZIndex = 13,
 		}, IconFrame)
-		msgX = NV.ICON + NV.PAD + 6
+		msgX = sICON + sPAD + math.floor(6 * size)
 	end
 
 	-- Message
 	local MsgLbl = nMake("TextLabel", {
-		Size = UDim2.new(1, -(msgX + NV.PAD), 1, -8),
-		Position = UDim2.new(0, msgX, 0, 4),
+		Size = UDim2.new(1, -(msgX + sPAD), 1, -math.floor(8 * size)),
+		Position = UDim2.new(0, msgX, 0, math.floor(4 * size)),
 		BackgroundTransparency = 1,
 		Text = body,
 		Font = Enum.Font.Gotham,
-		TextSize = math.floor(10 * scale),
+		TextSize = bodyFontSize,
 		TextColor3 = NC.TXT_SEC,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1161,12 +1187,12 @@ function APTX:Notify(params)
 		ZIndex = 12,
 	}, Body)
 
-	-- Progress divider (only when buttons or duration)
+	-- Progress divider
 	local DividerFill
 	if hasBtns or hasDur then
 		local db = nMake("Frame", {
 			Size = UDim2.new(1,0,0,2),
-			Position = UDim2.new(0,0,0, NV.TOPBAR + 1 + bodyH),
+			Position = UDim2.new(0,0,0, sTOPBAR + 1 + sBODY),
 			BackgroundColor3 = NC.DIVIDER,
 			BorderSizePixel = 0,
 			ZIndex = 11,
@@ -1184,7 +1210,7 @@ function APTX:Notify(params)
 	if hasBtns then
 		local bc = nMake("Frame", {
 			Size = UDim2.new(1,0,0,btnH),
-			Position = UDim2.new(0,0,0, NV.TOPBAR + 1 + bodyH + 2),
+			Position = UDim2.new(0,0,0, sTOPBAR + 1 + sBODY + 2),
 			BackgroundTransparency = 1,
 			ZIndex = 11,
 		}, Card)
@@ -1192,19 +1218,31 @@ function APTX:Notify(params)
 			FillDirection = Enum.FillDirection.Horizontal,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 7),
+			Padding = UDim.new(0, math.floor(7 * size)),
 		}, bc)
 
 		for i = 1, math.min(#buttons, 3) do
 			local bDef = buttons[i]
 			local bg = bDef.color or NC.NEUTRAL
-			local Btn = nBtn(bc, bg, bDef.label or ("Botón "..i), math.floor(10 * scale))
+			local Btn = nMake("TextButton", {
+				Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ),
+				BackgroundColor3 = bg,
+				Text = bDef.label or ("Boton "..i),
+				Font = Enum.Font.GothamBold,
+				TextSize = btnFontSize,
+				TextColor3 = Color3.new(1,1,1),
+				BorderSizePixel = 0,
+				AutoButtonColor = false,
+				ZIndex = 4,
+			}, bc)
+			nCorner(Btn, math.floor(7 * size))
+			nMake("UIStroke", {Color=Color3.new(1,1,1), Transparency=0.88, Thickness=1}, Btn)
 			nHover(Btn, bg, bg:Lerp(Color3.new(1,1,1), 0.18))
 			Btn.MouseButton1Down:Connect(function()
-				ntw(Btn, {Size = UDim2.new(0, NV.BTN_W-4, 0, NV.BTN_SZ-2)}, 0.09, Enum.EasingStyle.Quad)
+				ntw(Btn, {Size = UDim2.new(0, sBTN_W-4, 0, sBTN_SZ-2)}, 0.09, Enum.EasingStyle.Quad)
 			end)
 			Btn.MouseButton1Up:Connect(function()
-				ntw(Btn, {Size = UDim2.new(0, NV.BTN_W, 0, NV.BTN_SZ)}, 0.14, Enum.EasingStyle.Back)
+				ntw(Btn, {Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ)}, 0.14, Enum.EasingStyle.Back)
 			end)
 			Btn.MouseButton1Click:Connect(function()
 				if bDef.callback then task.spawn(bDef.callback) end
@@ -1221,41 +1259,40 @@ function APTX:Notify(params)
 
 	nDraggable(TB, Card)
 
+	-- Notif object
 	local Notif = {
 		_card = Card, _title = TitleLbl, _msg = MsgLbl,
 		_avaImg = AvaImg, _bodyIcon = IconImg,
 		_divFill = DividerFill, _neonConn = neonConn,
 		_iconFrame = IconFrame, _alive = true,
+		_scaledH = CARD_H,  -- store for stack repositioning
 	}
 
-	local entry = {card = Card, alive = true, h = CARD_H, w = CARD_W}
-	table.insert(nStack, entry)
+	-- Add to stack
+	table.insert(NotifStack, Notif)
 
 	local function fallClose(cb)
 		if not Notif._alive then return end
 		Notif._alive = false
-		entry.alive = false
+
+		-- Remove from stack and reposition remaining
+		removeFromStack(Notif)
+
 		local cur = Card.Position
 		ntw(Card, {Position=UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset-10), Rotation=-2}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		task.wait(0.17)
-		ntw(Card, {Position=UDim2.new(1, CARD_W+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		ntw(Card, {Position=UDim2.new(1, sW+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		ntw(Card, {BackgroundTransparency=0.5}, 0.35, Enum.EasingStyle.Linear)
 		task.delay(0.46, function()
 			neonConn:Disconnect()
-			for i = #nStack, 1, -1 do
-				if nStack[i] == entry then table.remove(nStack, i) break end
-			end
 			if cb then pcall(cb) end
 			Card:Destroy()
-			nRepos()
 		end)
 	end
 
-	nRepos()
-
-	-- Slide in
+	-- Slide in: flush to the right edge (X offset = 0), stacked position
 	task.delay(0.05, function()
-		nRepos()
+		repositionStack()
 	end)
 
 	-- Auto-close timer
