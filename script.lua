@@ -15,6 +15,7 @@ local chractive
 local chr
 texe = false
 xchr = false
+mhealing = false
 
 -- MODULES
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
@@ -167,6 +168,44 @@ end)
 
 
 -- SURVIVORS FUNCTIONS
+local function mheal()
+    local selectedPlayer = nil
+
+    for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
+        local playerObj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(playerName.Name)
+        if playerObj then
+            local charAttr = playerObj:GetAttribute("Character")
+            if charAttr == "Eggman" then
+                selectedPlayer = playerName
+                break
+            elseif charAttr == "Tails" and not selectedPlayer then
+                selectedPlayer = playerName
+            end
+        end
+    end
+
+    if not selectedPlayer then
+        return
+    end
+
+    if sit then sit:Disconnect() end
+    target = selectedPlayer
+
+    if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+        player.Character:FindFirstChildOfClass("Humanoid").Sit = true
+
+        sit = RunService.Heartbeat:Connect(function()
+            if selectedPlayer and Players:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+                getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
+            else
+                if sit then sit:Disconnect() end
+                target = nil
+            end
+        end)
+    end
+end
+
+
 local function tpexe()
     local selectedPlayer = nil
     for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
@@ -178,30 +217,25 @@ local function tpexe()
     end
 
     if not selectedPlayer then
-        warn("[tpexe] No se encontró ningún jugador con Team = EXE")
         return
     end
 
-    print("[tpexe] Jugador EXE encontrado: " .. selectedPlayer.Name)
-
+    
     if sit then sit:Disconnect() end
     target = selectedPlayer
 
     if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
         player.Character:FindFirstChildOfClass("Humanoid").Sit = true
-        print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
 
         sit = RunService.Heartbeat:Connect(function()
             if selectedPlayer and Players:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
                 getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
             else
-                warn("[tpexe] Condición perdida, desconectando sit")
                 if sit then sit:Disconnect() end
                 target = nil
             end
         end)
     else
-        warn("[tpexe] player.Character o Humanoid no disponible")
     end
 end
 
@@ -211,8 +245,12 @@ APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
     cream.Enabled = state
 end)
 
-APTX:Toggle(combat, "Auto metal/sonic stun", "send", false, function(state)
+APTX:Toggle(combat, "Auto metalsonic stun", "send", false, function(state)
     texe = state
+end)
+
+APTX:Toggle(combat, "Auto metalsonic eggman heal", "redo", false, function(state)
+    mhealing = state
 end)
 
 
@@ -228,31 +266,26 @@ local function xcharge()
     end
 
     if #survivorPlayers == 0 then
-        warn("[tpexe] No se encontró ningún jugador con Team = Survivors")
         return
     end
 
     local selectedPlayer = survivorPlayers[math.random(1, #survivorPlayers)]
-    print("[tpexe] Jugador Survivor aleatorio seleccionado: " .. selectedPlayer.Name)
 
     if sit then sit:Disconnect() end
     target = selectedPlayer
 
     if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
         player.Character:FindFirstChildOfClass("Humanoid").Sit = true
-        print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
 
         sit = RunService.Heartbeat:Connect(function()
             if selectedPlayer and Players:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Sit == true then
                 getRoot(player.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 0, 5)
             else
-                warn("[tpexe] Condición perdida, desconectando sit")
                 if sit then sit:Disconnect() end
                 target = nil
             end
         end)
     else
-        warn("[tpexe] player.Character o Humanoid no disponible")
     end
 end
 
@@ -416,6 +449,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if char == "2011x" then
             task.wait(3)
             xcharge()
+        end
+    end
+    
+    -- METALSONIC HEAL
+    if (key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1) and xchr then
+        if char == "MetalSonic" then
+            mheal()
         end
     end
 end)
