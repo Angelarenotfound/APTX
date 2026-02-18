@@ -432,7 +432,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     -- Snapshot state
     local state = gameState()
-    if state ~= "ING" then return end
+    if state ~= "ING" and state  ~= "80s" then return end
 
     local char = getChar()
 
