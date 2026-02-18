@@ -260,7 +260,7 @@ local function xcharge()
     
     for _, playerName in ipairs(game:GetService("Players"):GetPlayers()) do
         local playerObj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(playerName.Name)
-        if playerObj and playerObj:GetAttribute("Team") == "Survivors" then
+        if playerObj and playerObj:GetAttribute("Team") == "Survivor" then
             table.insert(survivorPlayers, playerName)
         end
     end
@@ -304,7 +304,7 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     local character = workspace.Players:WaitForChild(player.Name, 10)
     
     local function escape()
-        for i = 1, 7 do
+        for i = 1, 20 do
             mouse2click()
             mouse1click()
             task.wait(0.1)
