@@ -179,7 +179,7 @@ local function tpexe()
         print("[tpexe] Sentado activado, iniciando follow a " .. selectedPlayer.Name)
 
         sit = rs.Heartbeat:Connect(function()
-            if p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and getRoot(selectedPlayer.Character) and l.Character and getRoot(l.Character) and l.Character:FindFirstChildOfClass("Humanoid").Sit == true then
+            if selectedPlayer and p:FindFirstChild(selectedPlayer.Name) and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") and l.Character and l.Character:FindFirstChild("HumanoidRootPart") and l.Character:FindFirstChildOfClass("Humanoid") and l.Character:FindFirstChildOfClass("Humanoid").Sit == true then
                 getRoot(l.Character).CFrame = getRoot(selectedPlayer.Character).CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1.2, 2.2)
             else
                 warn("[tpexe] Condición perdida, desconectando sit")
