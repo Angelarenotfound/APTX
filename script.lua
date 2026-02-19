@@ -49,6 +49,21 @@ local function gameState()
     return gstate
 end
 
+local exe = nil
+
+while true do
+    task.wait(10)
+    for _, p in ipairs(Players:GetPlayers()) do
+        local folder = workspace:FindFirstChild("Players")
+        if folder then
+            local obj = folder:FindFirstChild(p.Name)
+            if obj and obj:GetAttribute("Team") == "EXE" then
+                exe = p
+                break
+            end
+        end
+    end
+end
 
 -- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
@@ -304,15 +319,6 @@ local function startAutomc()
             automcLoop:Disconnect()
             automcLoop = nil
             return
-        end
-
-        local exe = nil
-        for _, p in ipairs(Players:GetPlayers()) do
-            local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
-            if obj and obj:GetAttribute("Team") == "EXE" then
-                exe = p
-                break
-            end
         end
 
         if not exe then return end
