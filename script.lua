@@ -188,6 +188,8 @@ end)
 local automc = false
 local automcLoop = nil
 local mcstarted = false
+local ready = true
+local inside = false
 
 
 
@@ -315,8 +317,21 @@ local function startAutomc()
 
         if not myRoot or not exeRoot then return end
 
-        if (myRoot.Position - exeRoot.Position).Magnitude <= 20 and not target then
-            metaltpc()
+        local dist = (myRoot.Position - exeRoot.Position).Magnitude
+
+        if dist <= 20 then
+            if not inside then
+                inside = true
+                if ready and not target then
+                    ready = false
+                    metaltpc()
+                    task.delay(10, function()
+                        ready = true
+                    end)
+                end
+            end
+        else
+            inside = false
         end
     end)
 end
