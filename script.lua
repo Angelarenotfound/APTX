@@ -16,6 +16,7 @@ local chr
 texe = false
 xchr = false
 mhealing = false
+local exe = nil
 -- MODULES
 local CreamModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/cream.lua"))()
 local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/main.lua"))()
@@ -49,21 +50,7 @@ local function gameState()
     return gstate
 end
 
-local exe = nil
 
-while true do
-    task.wait(10)
-    for _, p in ipairs(Players:GetPlayers()) do
-        local folder = workspace:FindFirstChild("Players")
-        if folder then
-            local obj = folder:FindFirstChild(p.Name)
-            if obj and obj:GetAttribute("Team") == "EXE" then
-                exe = p
-                break
-            end
-        end
-    end
-end
 
 -- SECTIONS
 APTX:Config("APTX By DrexusTeam", true, true)
@@ -562,3 +549,17 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
     end
 end)
+
+while true do
+    task.wait(10)
+    for _, p in ipairs(Players:GetPlayers()) do
+        local folder = workspace:FindFirstChild("Players")
+        if folder then
+            local obj = folder:FindFirstChild(p.Name)
+            if obj and obj:GetAttribute("Team") == "EXE" then
+                exe = p
+                break
+            end
+        end
+    end
+end
