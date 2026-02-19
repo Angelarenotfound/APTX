@@ -344,12 +344,11 @@ APTX:Toggle(combat, "Auto metalsonic eggman heal", "redo", false, function(state
 end)
 
 APTX:Toggle(combat, "Metalsonic Charge hitbox", "calculator", false, function(state)
-    local automc = state
+    automc = state
     if not mcstarted then
         startAutomc()
-        local mcstarted = true
+        mcstarted = true
     end
-    
 end)
 
 -- Killers FUNCTIONS
