@@ -15,8 +15,17 @@ local APTX = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelare
 local tpeve = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/kolossos-charge.lua"))()
 local fly, unfly = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/fly.lua"))()
 local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))()
+local Server = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/server.lua"))()
 local cream = CreamModule:Create()
-
+Server:Init({
+    url = "https://aptx.drexus.xyz/servers/find",
+    player = game.Players.LocalPlayer,
+    place_id = game.PlaceId,
+    region = "us-east",
+    ping = 100,
+    score = 0.1,
+    limit = 10,
+})
 
 -- GLOBAL VARS
 _G.player, player = Players.LocalPlayer, Players.LocalPlayer
@@ -62,6 +71,7 @@ end
 APTX:Config("APTX By DrexusTeam", true, true)
 
 local home = APTX:Section("Home", "home", true)
+local servr = APTX:Section("Server", "signal", false)
 local playersec = APTX:Section("Player", "heart", false)
 local combat = APTX:Section("Survivors", "shield", false)
 local killer = APTX:Section("Killers", "eye", false)
@@ -86,6 +96,24 @@ end)
 APTX:Input(home, "Report Bugs", "edit", "Send feedback", function(text)
     print("feedback:", text)
 end)
+
+APTX:Label(servr, "Server Finder (ping)")
+APTX:Button(utils, "Refresh", "cloud", function()
+    local data = Server:Find(50)
+    n = APTX:Notify({
+        title = "Server List",
+        content = tostring(data),
+        size = 0.9,
+        ["topbar-icon"] = Icons["check"],
+        ["content-icon"] = Icons["book-open"],
+        buttons = {
+            { label = "Okay", color = Color3.fromRGB(88, 101, 242), callback = function() n:Destroy() end }
+        },
+        duration = 5,
+        type = "success"
+    })
+end)
+men1:Edit({ options = {} })
 
 
 -- PLAYER STARTUP
@@ -180,10 +208,6 @@ end)
 
 APTX:Slider(playersec, "FOV", "camera", 70, 120, 70, function(value)
     workspace.CurrentCamera.FieldOfView = value
-end)
-
-APTX:Button(playersec, "Rejoin Server", "refresh", function()
-    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, game.Players.LocalPlayer)
 end)
 
 
