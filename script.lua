@@ -98,7 +98,7 @@ APTX:Input(home, "Report Bugs", "edit", "Send feedback", function(text)
 end)
 
 APTX:Label(servr, "Server Finder (ping)")
-APTX:Button(utils, "Refresh", "cloud", function()
+APTX:Button(servr, "Refresh", "cloud", function()
     local data = Server:Find(50)
     n = APTX:Notify({
         title = "Server List",
@@ -113,7 +113,6 @@ APTX:Button(utils, "Refresh", "cloud", function()
         type = "success"
     })
 end)
-men1:Edit({ options = {} })
 
 
 -- PLAYER STARTUP
