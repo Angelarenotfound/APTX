@@ -18,7 +18,7 @@ local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelar
 local Server = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/server.lua"))()
 local cream = CreamModule:Create()
 Server:Init({
-    url = "https://aptx.drexus.xyz/servers/find",
+    url = "https://aptx.drexus.xyz",
     player = game.Players.LocalPlayer,
     place_id = game.PlaceId,
     region = "us-east",
