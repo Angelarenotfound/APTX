@@ -538,7 +538,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 
     if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe then
-        if char == "MetalSonic" and getCooldown(1) == 0.0 then
+        if char == "MetalSonic" and tonumber(getCooldown(1)) == 0 then
             mh = true
             task.wait(10)
             mh = false
