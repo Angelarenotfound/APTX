@@ -348,7 +348,7 @@ local function startAutomc()
                 inside = true
                 if ready and not target then
                     ready = false
-                    metaltpc()
+                    tpexe()
                     task.delay(5, function()
                         ready = true
                     end)
