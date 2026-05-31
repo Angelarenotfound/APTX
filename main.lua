@@ -1,7 +1,51 @@
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))()
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local Module = {}
+Module._cache = {}
+
+function Module.Load(url)
+    if Module._cache[url] ~= nil then
+        return Module._cache[url]
+    end
+
+    local ok, body = pcall(game.HttpGet, game, url)
+    if not ok then
+        warn("[Module] HTTP error:", url, body)
+        Module._cache[url] = nil
+        return nil
+    end
+
+    local fn, compileErr = loadstring(body)
+    if not fn then
+        warn("[Module] Compile error:", url, compileErr)
+        Module._cache[url] = nil
+        return nil
+    end
+
+    local success, result = pcall(fn)
+    if not success then
+        warn("[Module] Runtime error:", url, result)
+        Module._cache[url] = nil
+        return nil
+    end
+
+    Module._cache[url] = result
+    return result
+end
+
+function Module.ClearCache()
+    Module._cache = {}
+end
+
+local Icons = Module.Load("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua")
+if not Icons then
+    Icons = {}
+    warn("[APTX] Failed to load icons module")
+end
 
 local Theme = {
     TotalBlack = Color3.fromRGB(0, 0, 0),
@@ -21,6 +65,8 @@ local Theme = {
     DisabledText = Color3.fromRGB(80, 80, 80),
 }
 
+local NOTIF_Z_BASE = 1000
+
 local APTX = {}
 APTX.__index = APTX
 
@@ -33,11 +79,40 @@ APTX.GUI = nil
 APTX.MainFrame = nil
 APTX.HideButton = nil
 APTX.IsVisible = true
+APTX._connections = {}
+
+local function clamp(v, lo, hi)
+    return math.max(lo, math.min(hi, v))
+end
 
 local function log(...)
     if APTX.DevMode then
         print("[APTX]", ...)
     end
+end
+
+local TWEEN_FAST   = TweenInfo.new(0.1, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
+local TWEEN_MED    = TweenInfo.new(0.2, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
+local TWEEN_SLOW   = TweenInfo.new(0.3, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
+local TWEEN_BOUNCE = TweenInfo.new(0.3, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
+local TWEEN_LINEAR = TweenInfo.new(0.35, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+local TWEEN_QUAD_IN = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+local NTWEEN_FAST = TweenInfo.new(0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local NTWEEN_MED  = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local NTWEEN_SLOW = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+local function tween(object, properties, duration, easing, direction)
+    local info
+    if not easing and not direction then
+        info = duration == 0.1 and TWEEN_FAST
+            or duration == 0.2 and TWEEN_MED
+            or duration == 0.3 and TWEEN_SLOW
+            or TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    else
+        info = TweenInfo.new(duration or 0.2, easing or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out)
+    end
+    TweenService:Create(object, info, properties):Play()
 end
 
 local function createCorner(radius)
@@ -54,18 +129,17 @@ local function createStroke(color, thickness)
     return stroke
 end
 
-local function tween(object, properties, duration)
-    local info = TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    TweenService:Create(object, info, properties):Play()
-end
-
 local function createIcon(parent, iconName, size)
     local icon = Instance.new("ImageLabel")
     icon.Name = "Icon"
     icon.Size = UDim2.new(0, size or 18, 0, size or 18)
     icon.BackgroundTransparency = 1
     icon.ImageColor3 = Theme.White
-    icon.Image = Icons[iconName] or ""
+    local iconId = Icons[iconName]
+    if not iconId and APTX.DevMode then
+        log("WARNING: Icon not found:", iconName)
+    end
+    icon.Image = iconId or ""
     icon.Parent = parent
     return icon
 end
@@ -85,13 +159,55 @@ local function makeOverlay(parent)
     return overlay
 end
 
-local function attachComponentMethods(comp, frame, sectionRef)
+local function makeDraggable(handle, target)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = target.Position
+        end
+    end)
+
+    handle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    handle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    return UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            target.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+local function initComponent(comp, frame, sectionRef)
     comp._frame = frame
     comp._disabled = false
     comp._overlay = nil
     comp._section = sectionRef
+    comp._connections = {}
 
     function comp:Remove()
+        for _, conn in ipairs(self._connections) do
+            conn:Disconnect()
+        end
+        self._connections = {}
         if self._frame and self._frame.Parent then
             self._frame:Destroy()
             self._frame = nil
@@ -122,13 +238,20 @@ local function attachComponentMethods(comp, frame, sectionRef)
     function comp:MoveTo(targetSectionName)
         local targetSection = APTX:GetSection(targetSectionName)
         if not targetSection then
-            log("ERROR: Seccion destino no encontrada:", targetSectionName)
+            log("ERROR: Section not found:", targetSectionName)
             return
         end
         if self._frame then
             self._frame.Parent = targetSection.Container
             self._section = targetSection
         end
+    end
+
+    function comp:DisconnectAll()
+        for _, conn in ipairs(self._connections) do
+            conn:Disconnect()
+        end
+        self._connections = {}
     end
 
     return comp
@@ -147,6 +270,9 @@ end
 
 function APTX:CreateGUI()
     local player = Players.LocalPlayer
+    if not player then
+        player = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    end
     local playerGui = player:WaitForChild("PlayerGui")
 
     if playerGui:FindFirstChild("APTXGui") then
@@ -183,7 +309,8 @@ function APTX:CreateGUI()
     APTX:CreateContentArea(container)
 
     if APTX.Draggable then
-        APTX:MakeDraggable()
+        local dragConn = makeDraggable(APTX.TopBar, APTX.MainFrame)
+        table.insert(APTX._connections, dragConn)
     end
 end
 
@@ -238,9 +365,10 @@ function APTX:CreateSidebar(parent)
     layout.Padding = UDim.new(0, 5)
     layout.Parent = sectionList
 
-    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    local sideConn = layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         sectionList.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     end)
+    table.insert(APTX._connections, sideConn)
 
     APTX.SectionList = sectionList
 end
@@ -299,46 +427,16 @@ function APTX:ToggleVisibility()
     }, 0.3)
 end
 
-function APTX:MakeDraggable()
-    local dragging = false
-    local dragInput, dragStart, startPos
-
-    APTX.TopBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = APTX.MainFrame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    APTX.TopBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            APTX.MainFrame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
 function APTX:Destroy()
+    for _, conn in ipairs(APTX._connections) do
+        conn:Disconnect()
+    end
+    APTX._connections = {}
+    APTX.Sections = {}
+    APTX.CurrentSection = nil
     if APTX.GUI then
         APTX.GUI:Destroy()
+        APTX.GUI = nil
     end
 end
 
@@ -393,9 +491,13 @@ function APTX:Section(text, icon, default)
     layout.Padding = UDim.new(0, 6)
     layout.Parent = section.Container
 
-    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    local sectionComp = {}
+    initComponent(sectionComp, section.Container, nil)
+
+    local layoutConn = layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         section.Container.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     end)
+    table.insert(sectionComp._connections, layoutConn)
 
     section.Button.MouseButton1Click:Connect(function()
         APTX:SelectSection(text)
@@ -419,7 +521,31 @@ function APTX:Section(text, icon, default)
         APTX:SelectSection(text)
     end
 
-    return text
+    function sectionComp:Remove()
+        for _, conn in ipairs(sectionComp._connections) do
+            conn:Disconnect()
+        end
+        sectionComp._connections = {}
+        if section.Button and section.Button.Parent then
+            section.Button:Destroy()
+        end
+        if section.Container and section.Container.Parent then
+            section.Container:Destroy()
+        end
+        sectionComp._frame = nil
+        sectionComp._section = nil
+        for i = #APTX.Sections, 1, -1 do
+            if APTX.Sections[i] == section then
+                table.remove(APTX.Sections, i)
+                break
+            end
+        end
+        if APTX.CurrentSection == text then
+            APTX.CurrentSection = nil
+        end
+    end
+
+    return sectionComp
 end
 
 function APTX:SelectSection(name)
@@ -453,9 +579,14 @@ function APTX:GetSection(name)
 end
 
 function APTX:Button(sectionName, text, icon, callback)
+    if type(icon) == "function" then
+        callback = icon
+        icon = nil
+    end
+
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
     end
 
@@ -486,14 +617,20 @@ function APTX:Button(sectionName, text, icon, callback)
     label.Parent = button
 
     local comp = {}
-    comp._disabled = false
+    local cb = callback
+    initComponent(comp, button, section)
 
     button.MouseButton1Click:Connect(function()
         if comp._disabled then return end
-        tween(button, {BackgroundColor3 = Theme.Green}, 0.1)
-        task.wait(0.15)
-        tween(button, {BackgroundColor3 = Theme.Gray}, 0.1)
-        if callback then callback() end
+        local t1 = TweenService:Create(button, TWEEN_FAST, {BackgroundColor3 = Theme.Green})
+        local t2 = TweenService:Create(button, TWEEN_FAST, {BackgroundColor3 = Theme.Gray})
+        t1.Completed:Connect(function()
+            t2:Play()
+            t2.Completed:Connect(function()
+                if cb then cb() end
+            end)
+        end)
+        t1:Play()
     end)
 
     button.MouseEnter:Connect(function()
@@ -508,8 +645,6 @@ function APTX:Button(sectionName, text, icon, callback)
         end
     end)
 
-    attachComponentMethods(comp, button, section)
-
     function comp:Edit(params)
         params = params or {}
         if params.text then
@@ -517,7 +652,7 @@ function APTX:Button(sectionName, text, icon, callback)
             label.Text = params.text
         end
         if params.callback then
-            callback = params.callback
+            cb = params.callback
         end
     end
 
@@ -527,7 +662,7 @@ end
 function APTX:Toggle(sectionName, text, icon, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
     end
 
@@ -578,7 +713,8 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
     createCorner(9).Parent = indicator
 
     local comp = {}
-    comp._disabled = false
+    local cb = callback
+    initComponent(comp, container, section)
 
     toggleBtn.MouseButton1Click:Connect(function()
         if comp._disabled then return end
@@ -589,10 +725,8 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         tween(toggleBtn, {
             BackgroundColor3 = isOn and Theme.Green or Theme.Gray
         })
-        if callback then callback(isOn) end
+        if cb then cb(isOn) end
     end)
-
-    attachComponentMethods(comp, container, section)
 
     function comp:Edit(params)
         params = params or {}
@@ -607,7 +741,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             })
             tween(toggleBtn, {BackgroundColor3 = isOn and Theme.Green or Theme.Gray})
         end
-        if params.callback then callback = params.callback end
+        if params.callback then cb = params.callback end
     end
 
     function comp:GetValue()
@@ -620,8 +754,13 @@ end
 function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
+    end
+
+    if max == min then
+        max = min + 1
+        log("WARNING: Slider min==max, adjusted max to", max)
     end
 
     local value = default or min
@@ -699,16 +838,21 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
 
     local dragging = false
     local comp = {}
-    comp._disabled = false
+    local cb = callback
+    initComponent(comp, container, section)
 
     local function updateSlider(input)
         if comp._disabled then return end
-        local pos = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+        if not container or not container.Parent then return end
+        local relX = input.Position.X - track.AbsolutePosition.X
+        local trackW = track.AbsoluteSize.X
+        if trackW <= 0 then return end
+        local pos = clamp(relX / trackW, 0, 1)
         value = math.floor(min + (max - min) * pos)
         valueLabel.Text = tostring(value)
         fill.Size = UDim2.new(pos, 0, 1, 0)
         knob.Position = UDim2.new(pos, -8, 0.5, -8)
-        if callback then callback(value) end
+        if cb then cb(value) end
     end
 
     track.InputBegan:Connect(function(input)
@@ -725,27 +869,29 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    local uisConn = UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             updateSlider(input)
         end
     end)
-
-    attachComponentMethods(comp, container, section)
+    table.insert(comp._connections, uisConn)
 
     function comp:Edit(params)
         params = params or {}
         if params.text then label.Text = params.text end
         if params.min ~= nil then min = params.min end
-        if params.max ~= nil then max = params.max end
+        if params.max ~= nil then
+            max = params.max
+            if max == min then max = min + 1 end
+        end
         if params.value ~= nil then
-            value = math.clamp(params.value, min, max)
+            value = clamp(params.value, min, max)
             local pos = (value - min) / (max - min)
             valueLabel.Text = tostring(value)
             fill.Size = UDim2.new(pos, 0, 1, 0)
             knob.Position = UDim2.new(pos, -8, 0.5, -8)
         end
-        if params.callback then callback = params.callback end
+        if params.callback then cb = params.callback end
     end
 
     function comp:GetValue()
@@ -753,7 +899,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     end
 
     function comp:SetValue(v)
-        value = math.clamp(v, min, max)
+        value = clamp(v, min, max)
         local pos = (value - min) / (max - min)
         valueLabel.Text = tostring(value)
         fill.Size = UDim2.new(pos, 0, 1, 0)
@@ -766,7 +912,7 @@ end
 function APTX:Menu(sectionName, text, placeholder, icon, options, default, callback)
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
     end
 
@@ -849,40 +995,57 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
     optionsLayout.Parent = optionsList
 
     local comp = {}
-    comp._disabled = false
+    local cb = callback
+    initComponent(comp, container, section)
+
+    local optionButtons = {}
 
     local function rebuildOptions()
-        for _, child in ipairs(optionsList:GetChildren()) do
-            if child:IsA("TextButton") then child:Destroy() end
-        end
-        for _, option in ipairs(currentOptions) do
-            local optionBtn = Instance.new("TextButton")
-            optionBtn.Size = UDim2.new(1, 0, 0, 26)
-            optionBtn.BackgroundColor3 = Theme.Gray
-            optionBtn.Text = "  " .. option
-            optionBtn.TextColor3 = Theme.White
-            optionBtn.Font = Enum.Font.Gotham
-            optionBtn.TextSize = 12
-            optionBtn.TextXAlignment = Enum.TextXAlignment.Left
-            optionBtn.Parent = optionsList
+        local count = math.max(#currentOptions, #optionButtons)
 
-            optionBtn.MouseButton1Click:Connect(function()
-                if comp._disabled then return end
-                selected = option
-                selectedLabel.Text = selected
-                if callback then callback(selected) end
-                isOpen = false
-                tween(container, {Size = UDim2.new(1, 0, 0, 60)}, 0.2)
-                tween(optionsList, {Size = UDim2.new(1, -20, 0, 0)}, 0.2)
-                tween(arrow, {Rotation = 0}, 0.2)
-            end)
+        for i = 1, count do
+            local btn = optionButtons[i]
 
-            optionBtn.MouseEnter:Connect(function()
-                tween(optionBtn, {BackgroundColor3 = Theme.LightGray})
-            end)
-            optionBtn.MouseLeave:Connect(function()
-                tween(optionBtn, {BackgroundColor3 = Theme.Gray})
-            end)
+            if i <= #currentOptions then
+                local option = currentOptions[i]
+
+                if not btn then
+                    btn = Instance.new("TextButton")
+                    btn.Size = UDim2.new(1, 0, 0, 26)
+                    btn.BackgroundColor3 = Theme.Gray
+                    btn.TextColor3 = Theme.White
+                    btn.Font = Enum.Font.Gotham
+                    btn.TextSize = 12
+                    btn.TextXAlignment = Enum.TextXAlignment.Left
+                    btn.Parent = optionsList
+                    optionButtons[i] = btn
+
+                    btn.MouseButton1Click:Connect(function()
+                        if comp._disabled then return end
+                        local opt = btn._optionValue
+                        selected = opt
+                        selectedLabel.Text = selected
+                        if cb then cb(selected) end
+                        isOpen = false
+                        tween(container, {Size = UDim2.new(1, 0, 0, 60)}, 0.2)
+                        tween(optionsList, {Size = UDim2.new(1, -20, 0, 0)}, 0.2)
+                        tween(arrow, {Rotation = 0}, 0.2)
+                    end)
+
+                    btn.MouseEnter:Connect(function()
+                        tween(btn, {BackgroundColor3 = Theme.LightGray})
+                    end)
+                    btn.MouseLeave:Connect(function()
+                        tween(btn, {BackgroundColor3 = Theme.Gray})
+                    end)
+                end
+
+                btn.Text = "  " .. option
+                btn._optionValue = option
+                btn.Visible = true
+            elseif btn then
+                btn.Visible = false
+            end
         end
     end
 
@@ -897,8 +1060,6 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         tween(optionsList, {Size = UDim2.new(1, -20, 0, listHeight)}, 0.2)
         tween(arrow, {Rotation = isOpen and 180 or 0}, 0.2)
     end)
-
-    attachComponentMethods(comp, container, section)
 
     function comp:Edit(params)
         params = params or {}
@@ -920,7 +1081,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
             selected = params.selected
             selectedLabel.Text = selected
         end
-        if params.callback then callback = params.callback end
+        if params.callback then cb = params.callback end
     end
 
     function comp:GetValue()
@@ -938,7 +1099,7 @@ end
 function APTX:Input(sectionName, text, icon, placeholder, callback)
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
     end
 
@@ -984,12 +1145,13 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
     padding.Parent = inputBox
 
     local comp = {}
-    comp._disabled = false
+    local cb = callback
+    initComponent(comp, container, section)
 
     inputBox.FocusLost:Connect(function(enterPressed)
         if comp._disabled then return end
-        if enterPressed and callback then
-            callback(inputBox.Text)
+        if enterPressed and cb then
+            cb(inputBox.Text)
         end
     end)
 
@@ -999,14 +1161,12 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         end
     end)
 
-    attachComponentMethods(comp, container, section)
-
     function comp:Edit(params)
         params = params or {}
         if params.text then label.Text = params.text end
         if params.placeholder then inputBox.PlaceholderText = params.placeholder end
         if params.value then inputBox.Text = params.value end
-        if params.callback then callback = params.callback end
+        if params.callback then cb = params.callback end
     end
 
     function comp:GetValue()
@@ -1023,7 +1183,7 @@ end
 function APTX:Label(sectionName, text)
     local section = APTX:GetSection(sectionName)
     if not section then
-        log("ERROR: Seccion no encontrada:", sectionName)
+        log("ERROR: Section not found:", sectionName)
         return
     end
 
@@ -1040,9 +1200,7 @@ function APTX:Label(sectionName, text)
     label.Parent = section.Container
 
     local comp = {}
-    comp._disabled = false
-
-    attachComponentMethods(comp, label, section)
+    initComponent(comp, label, section)
 
     function comp:Edit(params)
         params = params or {}
@@ -1056,8 +1214,6 @@ function APTX:Label(sectionName, text)
 
     return comp
 end
-
-local RunService = game:GetService("RunService")
 
 local N_PALETTES = {
     warning = { Color3.fromRGB(255,210,0),   Color3.fromRGB(255,120,0)   },
@@ -1087,11 +1243,20 @@ local NV = {
 local NotifStack = {}
 local NOTIF_GAP  = 6
 local NOTIF_RIGHT_MARGIN = 2
+local notifCounter = 0
 
 local function ntw(obj, props, t, style, dir)
-    TweenService:Create(obj,
-        TweenInfo.new(t or 0.25, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out),
-        props):Play()
+    local info
+    if not style and not dir then
+        info = (t == 0.13 or t == 0.1) and NTWEEN_FAST
+            or (t == 0.2 or t == 0.25) and NTWEEN_MED
+            or (t == 0.3) and NTWEEN_SLOW
+            or (t == 0.09) and NTWEEN_FAST
+            or TweenInfo.new(t or 0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    else
+        info = TweenInfo.new(t or 0.25, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out)
+    end
+    TweenService:Create(obj, info, props):Play()
 end
 
 local function nMake(cls, props, parent)
@@ -1121,9 +1286,17 @@ local function nNeon(card, notifType)
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         Color = c1,
     }, card)
-    local conn = RunService.Heartbeat:Connect(function(dt)
-        t = (t + dt * 1.4) % 1
-        ns.Color = c1:Lerp(c2, math.abs(math.sin(t * math.pi)))
+    local frameCount = 0
+    local conn
+    conn = RunService.Heartbeat:Connect(function(dt)
+        frameCount = frameCount + 1
+        if frameCount % 2 == 0 then
+            t = (t + dt * 2.8) % 1
+            ns.Color = c1:Lerp(c2, math.abs(math.sin(t * math.pi)))
+        end
+    end)
+    card.Destroying:Connect(function()
+        conn:Disconnect()
     end)
     return conn
 end
@@ -1131,27 +1304,6 @@ end
 local function nHover(btn, normal, hover)
     btn.MouseEnter:Connect(function() ntw(btn, {BackgroundColor3=hover}, 0.13) end)
     btn.MouseLeave:Connect(function() ntw(btn, {BackgroundColor3=normal}, 0.13) end)
-end
-
-local function nDraggable(handle, card)
-    local drag, input, start, sPos
-    handle.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then
-            drag, start, sPos = true, i.Position, card.Position
-            i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then drag = false end
-            end)
-        end
-    end)
-    handle.InputChanged:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseMovement then input = i end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if i == input and drag then
-            local d = i.Position - start
-            card.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset+d.X, sPos.Y.Scale, sPos.Y.Offset+d.Y)
-        end
-    end)
 end
 
 local function repositionStack()
@@ -1221,14 +1373,15 @@ function APTX:Notify(params)
     assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
     local gui = APTX.GUI
 
+    notifCounter = notifCounter + 1
     local Card = nMake("Frame", {
-        Name = "NotifCard_"..tostring(tick()),
+        Name = "NotifCard_" .. notifCounter,
         Size = UDim2.new(0, sW, 0, CARD_H),
         Position = UDim2.new(1, sW + 20, 1, -CARD_H),
         BackgroundColor3 = NC.BG,
         BorderSizePixel = 0,
         ClipsDescendants = true,
-        ZIndex = 10,
+        ZIndex = NOTIF_Z_BASE,
     }, gui)
     nCorner(Card, math.floor(13 * size))
     local neonConn = nNeon(Card, notifType)
@@ -1237,7 +1390,7 @@ function APTX:Notify(params)
         Size = UDim2.new(1, 0, 0, sTOPBAR),
         BackgroundColor3 = NC.TOPBAR,
         BorderSizePixel = 0,
-        ZIndex = 11,
+        ZIndex = NOTIF_Z_BASE + 1,
     }, Card)
     nCorner(TB, math.floor(13 * size))
     nMake("Frame", {
@@ -1245,7 +1398,7 @@ function APTX:Notify(params)
         Position = UDim2.new(0, 0, 1, -math.floor(13 * size)),
         BackgroundColor3 = NC.TOPBAR,
         BorderSizePixel = 0,
-        ZIndex = 11,
+        ZIndex = NOTIF_Z_BASE + 1,
     }, TB)
 
     local AvaImg
@@ -1257,21 +1410,21 @@ function APTX:Notify(params)
             AnchorPoint = Vector2.new(0, 0.5),
             BackgroundColor3 = NC.ACCENT,
             BorderSizePixel = 0,
-            ZIndex = 12,
+            ZIndex = NOTIF_Z_BASE + 2,
         }, TB)
         nCorner(af, 99)
         AvaImg = nMake("ImageLabel", {
             Size = UDim2.new(1,0,1,0),
             BackgroundTransparency = 1,
             Image = iconTop,
-            ScaleType = Enum.ScaleType.Crop,
-            ZIndex = 13,
+            ScaleType = Enum.ScaleType.Fit,
+            ZIndex = NOTIF_Z_BASE + 3,
         }, af)
         nCorner(AvaImg, 99)
         titleX = sAVA + sPAD + math.floor(6 * size)
     end
 
-    local closeBtnSize = math.floor(20 * size)
+    local closeBtnSize = math.max(1, math.floor(20 * size))
     local TitleLbl = nMake("TextLabel", {
         Size = UDim2.new(1, -(titleX + math.floor(30 * size)), 1, 0),
         Position = UDim2.new(0, titleX, 0, 0),
@@ -1282,7 +1435,7 @@ function APTX:Notify(params)
         TextColor3 = NC.TXT_PRI,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 12,
+        ZIndex = NOTIF_Z_BASE + 2,
     }, TB)
 
     local CloseBtn = nMake("ImageButton", {
@@ -1295,7 +1448,7 @@ function APTX:Notify(params)
         ScaleType = Enum.ScaleType.Fit,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        ZIndex = 13,
+        ZIndex = NOTIF_Z_BASE + 3,
     }, TB)
     nCorner(CloseBtn, 99)
     nHover(CloseBtn, NC.CLOSEBG, NC.DECLINE)
@@ -1305,14 +1458,14 @@ function APTX:Notify(params)
         Position = UDim2.new(0,0,0,sTOPBAR),
         BackgroundColor3 = NC.DIVIDER,
         BorderSizePixel = 0,
-        ZIndex = 11,
+        ZIndex = NOTIF_Z_BASE + 1,
     }, Card)
 
     local Body = nMake("Frame", {
         Size = UDim2.new(1, 0, 0, sBODY),
         Position = UDim2.new(0, 0, 0, sTOPBAR + 1),
         BackgroundTransparency = 1,
-        ZIndex = 11,
+        ZIndex = NOTIF_Z_BASE + 1,
     }, Card)
 
     local IconFrame, IconImg
@@ -1324,7 +1477,7 @@ function APTX:Notify(params)
             AnchorPoint = Vector2.new(0, 0.5),
             BackgroundColor3 = Color3.fromRGB(18,18,20),
             BorderSizePixel = 0,
-            ZIndex = 12,
+            ZIndex = NOTIF_Z_BASE + 2,
         }, Body)
         nCorner(IconFrame, math.floor(10 * size))
         nStroke(IconFrame, NC.ACCENT, 1)
@@ -1335,7 +1488,7 @@ function APTX:Notify(params)
             BackgroundTransparency = 1,
             Image = iconBody,
             ImageColor3 = NC.ACCENT,
-            ZIndex = 13,
+            ZIndex = NOTIF_Z_BASE + 3,
         }, IconFrame)
         msgX = sICON + sPAD + math.floor(6 * size)
     end
@@ -1351,7 +1504,7 @@ function APTX:Notify(params)
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Top,
-        ZIndex = 12,
+        ZIndex = NOTIF_Z_BASE + 2,
     }, Body)
 
     local DividerFill
@@ -1361,14 +1514,14 @@ function APTX:Notify(params)
             Position = UDim2.new(0,0,0, sTOPBAR + 1 + sBODY),
             BackgroundColor3 = NC.DIVIDER,
             BorderSizePixel = 0,
-            ZIndex = 11,
+            ZIndex = NOTIF_Z_BASE + 1,
             ClipsDescendants = true,
         }, Card)
         DividerFill = nMake("Frame", {
             Size = UDim2.new(1,0,1,0),
             BackgroundColor3 = NC.ACCENT,
             BorderSizePixel = 0,
-            ZIndex = 12,
+            ZIndex = NOTIF_Z_BASE + 2,
         }, db)
     end
 
@@ -1377,7 +1530,7 @@ function APTX:Notify(params)
             Size = UDim2.new(1,0,0,btnH),
             Position = UDim2.new(0,0,0, sTOPBAR + 1 + sBODY + 2),
             BackgroundTransparency = 1,
-            ZIndex = 11,
+            ZIndex = NOTIF_Z_BASE + 1,
         }, Card)
         nMake("UIListLayout", {
             FillDirection = Enum.FillDirection.Horizontal,
@@ -1416,22 +1569,27 @@ function APTX:Notify(params)
     end
 
     if sound then
-        local snd = nMake("Sound", {SoundId=sound, Volume=0.6}, gui)
+        local snd = nMake("Sound", {SoundId=sound, Volume=0.6}, Card)
         snd:Play()
-        game:GetService("Debris"):AddItem(snd, 5)
+        Debris:AddItem(snd, 5)
     end
 
-    nDraggable(TB, Card)
+    local dragConn = makeDraggable(TB, Card)
 
     local Notif = {
         _card = Card, _title = TitleLbl, _msg = MsgLbl,
         _avaImg = AvaImg, _bodyIcon = IconImg,
         _divFill = DividerFill, _neonConn = neonConn,
+        _dragConn = dragConn,
         _iconFrame = IconFrame, _alive = true,
         _scaledH = CARD_H,
         _scaledW = sW,
-        _autoCloseConn = nil,
+        _autoCloseThread = nil,
     }
+
+    Card.Destroying:Connect(function()
+        removeFromStack(Notif)
+    end)
 
     table.insert(NotifStack, Notif)
 
@@ -1439,38 +1597,51 @@ function APTX:Notify(params)
         if not Notif._alive then return end
         Notif._alive = false
 
-        if Notif._autoCloseConn then
-            Notif._autoCloseConn:Disconnect()
-            Notif._autoCloseConn = nil
+        if Notif._autoCloseThread then
+            task.cancel(Notif._autoCloseThread)
+            Notif._autoCloseThread = nil
+        end
+
+        if neonConn then
+            neonConn:Disconnect()
         end
 
         removeFromStack(Notif)
 
         if not Card or not Card.Parent then
-            neonConn:Disconnect()
+            if dragConn then dragConn:Disconnect() end
             if cb then pcall(cb) end
             return
         end
 
         local cur = Card.Position
-        ntw(Card, {Position=UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset-10), Rotation=-2}, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        task.wait(0.17)
-
-        if not Card or not Card.Parent then
-            neonConn:Disconnect()
-            if cb then pcall(cb) end
-            return
-        end
-
-        ntw(Card, {Position=UDim2.new(1, sW+80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H*0.55)), Rotation=22}, 0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-        ntw(Card, {BackgroundTransparency=0.5}, 0.35, Enum.EasingStyle.Linear)
-        task.delay(0.46, function()
-            neonConn:Disconnect()
-            if cb then pcall(cb) end
-            if Card and Card.Parent then
-                Card:Destroy()
+        local t1 = TweenService:Create(Card, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset - 10),
+            Rotation = -2,
+        })
+        t1.Completed:Connect(function()
+            if not Card or not Card.Parent then
+                if dragConn then dragConn:Disconnect() end
+                if cb then pcall(cb) end
+                return
             end
+            local t2 = TweenService:Create(Card, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, sW + 80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H * 0.55)),
+                Rotation = 22,
+            })
+            TweenService:Create(Card, TweenInfo.new(0.35, Enum.EasingStyle.Linear), {
+                BackgroundTransparency = 0.5,
+            }):Play()
+            t2.Completed:Connect(function()
+                if dragConn then dragConn:Disconnect() end
+                if cb then pcall(cb) end
+                if Card and Card.Parent then
+                    Card:Destroy()
+                end
+            end)
+            t2:Play()
         end)
+        t1:Play()
     end
 
     task.delay(0.05, function()
@@ -1482,7 +1653,7 @@ function APTX:Notify(params)
         local autoThread = task.delay(duration, function()
             if Notif._alive then fallClose() end
         end)
-        Notif._autoCloseConn = {Disconnect = function() task.cancel(autoThread) end}
+        Notif._autoCloseThread = autoThread
     end
 
     CloseBtn.MouseButton1Click:Connect(function()
@@ -1493,7 +1664,8 @@ function APTX:Notify(params)
         if self._alive then
             fallClose()
         elseif self._card and self._card.Parent then
-            self._neonConn:Disconnect()
+            if self._neonConn then self._neonConn:Disconnect() end
+            if self._dragConn then self._dragConn:Disconnect() end
             self._card:Destroy()
         end
     end
@@ -1510,9 +1682,16 @@ function APTX:Notify(params)
         if p["topbar-icon"]  and self._avaImg   then self._avaImg.Image   = p["topbar-icon"]  end
         if p["content-icon"] and self._bodyIcon then self._bodyIcon.Image = p["content-icon"] end
         if p.resetTimer and p.resetTimer > 0 and self._divFill then
+            if self._autoCloseThread then
+                task.cancel(self._autoCloseThread)
+                self._autoCloseThread = nil
+            end
             self._divFill.Size = UDim2.new(1,0,1,0)
             ntw(self._divFill, {Size=UDim2.new(0,0,1,0)}, p.resetTimer, Enum.EasingStyle.Linear)
-            task.delay(p.resetTimer, function() if self._alive then fallClose() end end)
+            local autoThread = task.delay(p.resetTimer, function()
+                if self._alive then fallClose() end
+            end)
+            self._autoCloseThread = autoThread
         end
     end
 
