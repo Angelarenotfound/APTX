@@ -70,12 +70,12 @@ end
 -- STARTUP
 APTX:Config("APTX By DrexusTeam", true, true)
 
-local home = APTX:Section("Home", "home", true)
-local servr = APTX:Section("Server", "signal", false)
-local playersec = APTX:Section("Player", "heart", false)
-local combat = APTX:Section("Survivors", "shield", false)
-local killer = APTX:Section("Killers", "eye", false)
-local utils = APTX:Section("Utilities", "folder", false)
+APTX:Section("Home", "home", true)
+APTX:Section("Server", "signal", false)
+APTX:Section("Player", "heart", false)
+APTX:Section("Survivors", "shield", false)
+APTX:Section("Killers", "eye", false)
+APTX:Section("Utilities", "folder", false)
 
 
 -- HOME VARS
@@ -84,21 +84,21 @@ local tpwalkStack = 0
 
 
 -- HOME STARTUP
-APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-APTX:Label(home, "APTX By DrexusTeam")
-APTX:Label(home, "Outcome Memories v0.2")
-APTX:Label(home, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+APTX:Label("Home", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+APTX:Label("Home", "APTX By DrexusTeam")
+APTX:Label("Home", "Outcome Memories v0.2")
+APTX:Label("Home", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-APTX:Button(home, "Join Discord", "bell", function()
+APTX:Button("Home", "Join Discord", "bell", function()
     setclipboard("https://discord.gg/mjY4sd3Un")
 end)
 
-APTX:Input(home, "Report Bugs", "edit", "Send feedback", function(text)
+APTX:Input("Home", "Report Bugs", "edit", "Send feedback", function(text)
     print("feedback:", text)
 end)
 
-APTX:Label(servr, "Server Finder (ping)")
-APTX:Button(servr, "Refresh", "cloud", function()
+APTX:Label("Server", "Server Finder (ping)")
+APTX:Button("Server", "Refresh", "cloud", function()
     local data = Server:Find(50)
     n = APTX:Notify({
         title = "Server List",
@@ -116,16 +116,16 @@ end)
 
 
 -- PLAYER STARTUP
-APTX:Label(playersec, "Player modifications")
+APTX:Label("Player", "Player modifications")
 
-APTX:Slider(playersec, "Speed (game sync)", "star", 2, 100, 0, function(value)
+APTX:Slider("Player", "Speed (game sync)", "star", 2, 100, 0, function(value)
     local at = Workspace.Players:WaitForChild(player.Name).ClientHandler
     at:SetAttribute("lockSpeed", value)
 end)
 
-APTX:Label(playersec, "Speed (game sync) It can affect the skills")
+APTX:Label("Player", "Speed (game sync) It can affect the skills")
 
-APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
+APTX:Input("Player", "Speed (game desync)", "edit", "Recomended 1.2 - 3", function(text)
     pcall(function()
         if tpwalking then
             tpwalking:Disconnect()
@@ -156,11 +156,11 @@ APTX:Input(playersec, "Speed (game desync)", "edit", "Recomended 1.2 - 3", funct
     end)
 end)
 
-APTX:Label(playersec, "Speed (game desync) cannot be automatically turned off by the anticheat")
+APTX:Label("Player", "Speed (game desync) cannot be automatically turned off by the anticheat")
 
 local n
 
-APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
+APTX:Toggle("Player", "Infinite Jump", "arrow-up", false, function(state)
     n = APTX:Notify({
         title = "Infinite Jump",
         content = "ni idea bro",
@@ -189,7 +189,7 @@ APTX:Toggle(playersec, "Infinite Jump", "arrow-up", false, function(state)
     end
 end)
 
-APTX:Toggle(playersec, "Fullbright", "sun", false, function(state)
+APTX:Toggle("Player", "Fullbright", "sun", false, function(state)
     if state then
         game.Lighting.Brightness = 2
         game.Lighting.ClockTime = 14
@@ -205,7 +205,7 @@ APTX:Toggle(playersec, "Fullbright", "sun", false, function(state)
     end
 end)
 
-APTX:Slider(playersec, "FOV", "camera", 70, 120, 70, function(value)
+APTX:Slider("Player", "FOV", "camera", 70, 120, 70, function(value)
     workspace.CurrentCamera.FieldOfView = value
 end)
 
@@ -362,19 +362,19 @@ end
 
 
 -- SURVIVORS STARTUP
-APTX:Toggle(combat, "Cream Helper", "users", false, function(state)
+APTX:Toggle("Survivors", "Cream Helper", "users", false, function(state)
     cream.Enabled = state
 end)
 
-APTX:Toggle(combat, "Auto metalsonic stun", "send", false, function(state)
+APTX:Toggle("Survivors", "Auto metalsonic stun", "send", false, function(state)
     texe = state
 end)
 
-APTX:Toggle(combat, "Auto metalsonic eggman heal", "redo", false, function(state)
+APTX:Toggle("Survivors", "Auto metalsonic eggman heal", "redo", false, function(state)
     mhealing = state
 end)
 
-APTX:Toggle(combat, "Metalsonic Charge hitbox", "calculator", false, function(state)
+APTX:Toggle("Survivors", "Metalsonic Charge hitbox", "calculator", false, function(state)
     automc = state
     if not mcstarted then
         startAutomc()
@@ -421,7 +421,7 @@ end
 
 
 -- KILLERS STARTUP
-APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
+APTX:Toggle("Killers", "Auto Silver Minigame", "wind", false, function(state)
     if s then
         s:Disconnect()
         s = nil
@@ -448,12 +448,12 @@ APTX:Toggle(killer, "Auto Silver Minigame", "wind", false, function(state)
     s = character.ChildAdded:Connect(onAdd)
 end)
 
-APTX:Toggle(killer, "Charge ALL", "check", false, function(state)
+APTX:Toggle("Killers", "Charge ALL", "check", false, function(state)
     local plrs = Players:GetPlayers()
     tpeve(0.5, plrs)
 end)
 
-APTX:Toggle(killer, "Auto 2011x charge", "send", false, function(state)
+APTX:Toggle("Killers", "Auto 2011x charge", "send", false, function(state)
     xchr = state
 end)
 
@@ -482,27 +482,27 @@ end
 
 
 -- UTILS STARTUP
-APTX:Button(utils, "Set Fly Keybind", "key", function()
+APTX:Button("Utilities", "Set Fly Keybind", "key", function()
     if listening then return end
     listening = true
 end)
 
-APTX:Input(utils, "Fly Speed", "edit", "Recomended 1 - 3", function(text)
+APTX:Input("Utilities", "Fly Speed", "edit", "Recomended 1 - 3", function(text)
     flyspeed = tonumber(text) or 1
     if flystate then
         fly:Mobile(flyspeed)
     end
 end)
 
-APTX:Toggle(utils, "Fly", "cloud", false, function(state)
+APTX:Toggle("Utilities", "Fly", "cloud", false, function(state)
     setFly(state)
 end)
 
-APTX:Toggle(utils, "Auto Select Character", "check", false, function(state)
+APTX:Toggle("Utilities", "Auto Select Character", "check", false, function(state)
     chractive = state
 end)
 
-APTX:Menu(utils, "Select Character", "Selecciona...", "user", {
+APTX:Menu("Utilities", "Select Character", "Selecciona...", "user", {
     "MetalSonic",
     "Eggman",
     "Sonic",
