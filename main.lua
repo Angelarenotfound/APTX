@@ -869,7 +869,7 @@ function APTX:Button(sectionName, text, icon, callback)
     local cb = callback
     initComponent(comp, card, section)
 
-    local    initHover(comp, card, stroke)
+    initHover(comp, card, stroke)
 
     card.MouseButton1Click:Connect(function()
         if comp._disabled then return end
@@ -953,7 +953,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
     local cb = callback
     initComponent(comp, card, section)
 
-    local    initHover(comp, card, stroke)
+    initHover(comp, card, stroke)
 
     local function setToggleState(state, instant)
         isOn = state
@@ -1098,7 +1098,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     local cb = callback
     initComponent(comp, card, section)
 
-    local    initHover(comp, card, stroke)
+    initHover(comp, card, stroke)
     local dragging = false
 
     local function updateSlider(input)
@@ -1461,7 +1461,7 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
     local cb = callback
     initComponent(comp, card, section)
 
-    local    initHover(comp, card, stroke)
+    initHover(comp, card, stroke)
 
     inputBox.Focused:Connect(function()
         tw(inputStroke, {Color = Theme.Accent}, TI_HOVER)
