@@ -4,44 +4,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 
-local Module = {}
-Module._cache = {}
-
-function Module.Load(url)
-    if Module._cache[url] ~= nil then
-        return Module._cache[url]
-    end
-    local ok, body = pcall(game.HttpGet, game, url)
-    if not ok then
-        warn("[Module] HTTP error:", url, body)
-        Module._cache[url] = nil
-        return nil
-    end
-    local fn, compileErr = loadstring(body)
-    if not fn then
-        warn("[Module] Compile error:", url, compileErr)
-        Module._cache[url] = nil
-        return nil
-    end
-    local success, result = pcall(fn)
-    if not success then
-        warn("[Module] Runtime error:", url, result)
-        Module._cache[url] = nil
-        return nil
-    end
-    Module._cache[url] = result
-    return result
-end
-
-function Module.ClearCache()
-    Module._cache = {}
-end
-
-local Icons = Module.Load("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua")
-if not Icons then
-    Icons = {}
-    warn("[APTX] Failed to load icons module")
-end
+local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
 
 local Theme = {
     Background = Color3.fromRGB(12, 12, 12),
