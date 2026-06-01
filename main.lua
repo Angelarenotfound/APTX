@@ -37,7 +37,7 @@ function Module.ClearCache()
     Module._cache = {}
 end
 
-local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua")()
+local Icons = Module.Load("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua")
 if not Icons then
     Icons = {}
     warn("[APTX] Failed to load icons module")
@@ -2000,5 +2000,7 @@ function APTX:Notify(params)
 
     return Notif
 end
+
+APTX.Icons = Icons
 
 return APTX
