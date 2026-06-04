@@ -24,6 +24,9 @@ local Theme = {
     Sidebar = Color3.fromRGB(15, 15, 15),
 }
 
+-- Weak table to register component references (avoids setting arbitrary properties on Roblox instances)
+local CompRegistry = setmetatable({}, { __mode = "k" })
+
 local APTX = {}
 APTX.__index = APTX
 
@@ -244,8 +247,15 @@ local function initResponsive()
     local function updateScale()
         if not APTX.GUI then return end
         local screenSize = APTX.GUI.AbsoluteSize
-        local scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
-        scale = clamp(scale, 0.35, 3.0)
+        local isMobile = screenSize.X < 600
+        local scale
+        if isMobile then
+            -- On mobile, occupy ~90% of screen width
+            scale = screenSize.X / 650
+        else
+            scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
+        end
+        scale = clamp(scale, 0.30, 2.5)
         APTX._scale = scale
         uiScale.Scale = scale
     end
@@ -299,15 +309,15 @@ function APTX:CreateGUI()
 
     APTX.MainFrame = newF({
         Name = "MainFrame",
-        Size = UDim2.new(0, 580, 0, 380),
-        Position = UDim2.new(0.5, -290, 0.5, -190),
+        Size = UDim2.new(0, 580, 0, 400),
+        Position = UDim2.new(0.5, -290, 0.5, -200),
         BackgroundColor3 = Theme.Background,
         BorderSizePixel = 0,
     }, APTX.GUI)
     newC(APTX.MainFrame, 12)
     newS(APTX.MainFrame, Theme.Border, 1)
 
-    local mfW, mfH = 580, 380
+    local mfW, mfH = 580, 400
     local function syncShadow(s)
         s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
     end
@@ -599,7 +609,7 @@ end
 
 function APTX:ToggleVisibility()
     APTX.IsVisible = not APTX.IsVisible
-    local targetY = APTX.IsVisible and UDim2.new(0.5, -290, 0.5, -190) or UDim2.new(0.5, -290, 1.5, 0)
+    local targetY = APTX.IsVisible and UDim2.new(0.5, -290, 0.5, -200) or UDim2.new(0.5, -290, 1.5, 0)
     tw(APTX.MainFrame, {Position = targetY}, TI_BOUNCE)
 end
 
@@ -616,12 +626,14 @@ function APTX:Destroy()
         -- Per-component connections (Sliders: UIS.InputChanged, Menus: UIS.InputBegan, etc.)
         if section.Container then
             for _, child in ipairs(section.Container:GetChildren()) do
-                if child._comp_ref and child._comp_ref._connections then
-                    for _, conn in ipairs(child._comp_ref._connections) do
+                local childComp = CompRegistry[child]
+                if childComp and childComp._connections then
+                    for _, conn in ipairs(childComp._connections) do
                         conn:Disconnect()
                     end
-                    child._comp_ref._connections = {}
+                    childComp._connections = {}
                 end
+                CompRegistry[child] = nil
             end
         end
     end
@@ -659,7 +671,7 @@ local function initComponent(comp, frame, sectionRef)
     comp._connections = {}
     comp._tooltipObj = nil
     comp._tooltipCons = nil
-    frame._comp_ref = comp
+    CompRegistry[frame] = comp
 
     function comp:Remove()
         if self._tooltipObj then
@@ -682,6 +694,7 @@ local function initComponent(comp, frame, sectionRef)
             conn:Disconnect()
         end
         self._connections = {}
+        CompRegistry[self._frame] = nil
         if self._frame and self._frame.Parent then
             self._frame:Destroy()
             self._frame = nil
@@ -868,7 +881,7 @@ local function animateSectionEntry(container)
     -- Collect all non-layout children
     local cards = {}
     for _, child in ipairs(container:GetChildren()) do
-        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") then
+        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
             table.insert(cards, child)
         end
     end
@@ -880,31 +893,41 @@ local function animateSectionEntry(container)
             -- Labels: only fade text, not background
             card.TextTransparency = 1
             task.delay(stagger, function()
-                if not card or not card.Parent or card.Parent ~= container then return end
-                tw(card, {TextTransparency = 0}, TI_ENTRY_FADE)
+                local ok, err = pcall(function()
+                    if not card or not card.Parent or card.Parent ~= container then return end
+                    tw(card, {TextTransparency = 0}, TI_ENTRY_FADE)
+                end)
+                if not ok and APTX.DevMode then
+                    warn("[APTX] animateSectionEntry error:", err)
+                end
             end)
         elseif card:IsA("Frame") then
             -- Cards & separator Frames: fade background
             card.BackgroundTransparency = 1
             task.delay(stagger, function()
-                if not card or not card.Parent or card.Parent ~= container then return end
-                tw(card, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
-                -- Fade in text/image children
-                for _, lbl in ipairs(card:GetChildren()) do
-                    if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
-                        lbl.TextTransparency = 1
-                        tw(lbl, {TextTransparency = 0}, TI_ENTRY_FADE)
-                    elseif lbl:IsA("ImageLabel") then
-                        lbl.ImageTransparency = 1
-                        tw(lbl, {ImageTransparency = 0}, TI_ENTRY_FADE)
-                    elseif lbl:IsA("UIStroke") then
-                        local origTransparency = lbl.Transparency
-                        lbl.Transparency = 1
-                        tw(lbl, {Transparency = origTransparency}, TI_ENTRY_FADE)
-                    elseif lbl:IsA("Frame") and lbl.Name ~= "Icon" then
-                        lbl.BackgroundTransparency = 1
-                        tw(lbl, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                local ok, err = pcall(function()
+                    if not card or not card.Parent or card.Parent ~= container then return end
+                    tw(card, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                    -- Fade in text/image children
+                    for _, lbl in ipairs(card:GetChildren()) do
+                        if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
+                            lbl.TextTransparency = 1
+                            tw(lbl, {TextTransparency = 0}, TI_ENTRY_FADE)
+                        elseif lbl:IsA("ImageLabel") then
+                            lbl.ImageTransparency = 1
+                            tw(lbl, {ImageTransparency = 0}, TI_ENTRY_FADE)
+                        elseif lbl:IsA("UIStroke") then
+                            local origTransparency = lbl.Transparency
+                            lbl.Transparency = 1
+                            tw(lbl, {Transparency = origTransparency}, TI_ENTRY_FADE)
+                        elseif lbl:IsA("Frame") and lbl.Name ~= "Icon" then
+                            lbl.BackgroundTransparency = 1
+                            tw(lbl, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                        end
                     end
+                end)
+                if not ok and APTX.DevMode then
+                    warn("[APTX] animateSectionEntry error:", err)
                 end
             end)
         else
@@ -917,160 +940,198 @@ end
 --- Section
 
 function APTX:Section(text, icon, default)
-    local section = {
-        Name = text,
-        Icon = icon,
-        Container = nil,
-        Button = nil,
-        _compRef = nil,
-        _entered = false,
-    }
+    local ok, result = pcall(function()
+        local section = {
+            Name = text,
+            Icon = icon,
+            Container = nil,
+            Button = nil,
+            _compRef = nil,
+            _entered = false,
+        }
 
-    section.Button = newB({
-        Name = text,
-        Size = UDim2.new(1, -4, 0, 38),
-        Position = UDim2.new(0, 2, 0, 0),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, APTX.SectionList)
-    newC(section.Button, 8)
+        section.Button = newB({
+            Name = text,
+            Size = UDim2.new(1, -4, 0, 38),
+            Position = UDim2.new(0, 2, 0, 0),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+        }, APTX.SectionList)
+        newC(section.Button, 8)
 
-    local accentBar = newF({
-        Name = "AccentBar",
-        Size = UDim2.new(0, 3, 1, 0),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Theme.Accent,
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-    }, section.Button)
+        local accentBar = newF({
+            Name = "AccentBar",
+            Size = UDim2.new(0, 3, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = Theme.Accent,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, section.Button)
 
-    local row = newF({
-        Size = UDim2.new(1, -8, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1,
-    }, section.Button)
+        local row = newF({
+            Size = UDim2.new(1, -8, 1, 0),
+            Position = UDim2.new(0, 8, 0, 0),
+            BackgroundTransparency = 1,
+        }, section.Button)
 
-    local iconLabel
-    if icon then
-        iconLabel = newI(icon, 16, row)
-        iconLabel.Position = UDim2.new(0, 0, 0.5, -8)
-    end
-
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, icon and -24 or 0, 1, 0),
-        Position = UDim2.new(0, icon and 24 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Theme.TextSecondary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, row)
-
-    section.Container = Instance.new("ScrollingFrame")
-    section.Container.Name = text .. "_Container"
-    section.Container.Size = UDim2.new(1, 0, 1, 0)
-    section.Container.BackgroundTransparency = 1
-    section.Container.BorderSizePixel = 0
-    section.Container.ScrollBarThickness = 3
-    section.Container.ScrollBarImageColor3 = Theme.Border
-    section.Container.Visible = false
-    section.Container.CanvasSize = UDim2.new(0, 0, 0, 0)
-    section.Container.Parent = APTX.ContentArea
-
-    local compLayout = Instance.new("UIListLayout")
-    compLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    compLayout.Padding = UDim.new(0, 6)
-    compLayout.Parent = section.Container
-
-    local sectionComp = {}
-    initComponent(sectionComp, section.Container, nil)
-    section._compRef = sectionComp
-
-    local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        section.Container.CanvasSize = UDim2.new(0, 0, 0, compLayout.AbsoluteContentSize.Y + 14)
-    end)
-    table.insert(sectionComp._connections, layoutConn)
-
-    -- Track button connections so they can be cleaned up
-    local btnClickConn = section.Button.MouseButton1Click:Connect(function()
-        APTX:SelectSection(text)
-    end)
-    table.insert(sectionComp._connections, btnClickConn)
-
-    local btnEnterConn = section.Button.MouseEnter:Connect(function()
-        if APTX.CurrentSection ~= text then
-            tw(section.Button, {BackgroundColor3 = Theme.CardHover, BackgroundTransparency = 0.85}, TI_HOVER)
-            label.TextColor3 = Theme.TextPrimary
-            if iconLabel then iconLabel.ImageColor3 = Theme.TextPrimary end
+        local iconLabel
+        if icon then
+            iconLabel = newI(icon, 16, row)
+            iconLabel.Position = UDim2.new(0, 0, 0.5, -8)
         end
-    end)
-    table.insert(sectionComp._connections, btnEnterConn)
 
-    local btnLeaveConn = section.Button.MouseLeave:Connect(function()
-        if APTX.CurrentSection ~= text then
-            tw(section.Button, {BackgroundTransparency = 1}, TI_HOVER)
-            label.TextColor3 = Theme.TextSecondary
-            if iconLabel then iconLabel.ImageColor3 = Theme.TextSecondary end
-        end
-    end)
-    table.insert(sectionComp._connections, btnLeaveConn)
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, icon and -24 or 0, 1, 0),
+            Position = UDim2.new(0, icon and 24 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, row)
 
-    table.insert(APTX.Sections, section)
+        section.Container = Instance.new("ScrollingFrame")
+        section.Container.Name = text .. "_Container"
+        section.Container.Size = UDim2.new(1, 0, 1, 0)
+        section.Container.BackgroundTransparency = 1
+        section.Container.BorderSizePixel = 0
+        section.Container.ScrollBarThickness = 3
+        section.Container.ScrollBarImageColor3 = Theme.Border
+        section.Container.Visible = false
+        section.Container.CanvasSize = UDim2.new(0, 0, 0, 0)
+        section.Container.Parent = APTX.ContentArea
 
-    if default == true or #APTX.Sections == 1 then
-        APTX:SelectSection(text)
-    end
+        local compLayout = Instance.new("UIListLayout")
+        compLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        compLayout.Padding = UDim.new(0, 6)
+        compLayout.Parent = section.Container
 
-    function sectionComp:Remove()
-        for _, conn in ipairs(sectionComp._connections) do
-            conn:Disconnect()
-        end
-        sectionComp._connections = {}
-        if section.Button and section.Button.Parent then
-            section.Button:Destroy()
-        end
-        if section.Container and section.Container.Parent then
-            section.Container:Destroy()
-        end
-        sectionComp._frame = nil
-        sectionComp._section = nil
-        section._compRef = nil
-        for i = #APTX.Sections, 1, -1 do
-            if APTX.Sections[i] == section then
-                table.remove(APTX.Sections, i)
-                break
-            end
-        end
-        if APTX.CurrentSection == text then
-            APTX.CurrentSection = nil
-        end
-    end
+        -- Empty state placeholder label
+        local emptyLabel = newL({
+            Name = "_EmptyPlaceholder",
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundTransparency = 1,
+            Text = "No hay elementos en esta secci├│n.",
+            TextColor3 = Theme.TextDisabled,
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Center,
+        }, section.Container)
 
-    function sectionComp:Clear()
-        local toRemove = {}
-        for _, child in ipairs(section.Container:GetChildren()) do
-            -- Skip layout and padding objects; remove everything else
-            if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") then
-                table.insert(toRemove, child)
-            end
-        end
-        for _, child in ipairs(toRemove) do
-            if child._comp_ref and child._comp_ref._connections then
-                for _, conn in ipairs(child._comp_ref._connections) do
-                    conn:Disconnect()
+        local sectionComp = {}
+        initComponent(sectionComp, section.Container, nil)
+        section._compRef = sectionComp
+
+        local function updateCanvasAndEmptyState()
+            local hasContent = false
+            for _, child in ipairs(section.Container:GetChildren()) do
+                if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
+                    hasContent = true
+                    break
                 end
-                child._comp_ref._connections = {}
             end
-            child:Destroy()
+            emptyLabel.Visible = not hasContent
+            section.Container.CanvasSize = UDim2.new(0, 0, 0, compLayout.AbsoluteContentSize.Y + 14)
         end
-    end
 
-    return sectionComp
+        local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasAndEmptyState)
+        table.insert(sectionComp._connections, layoutConn)
+
+        -- Track button connections so they can be cleaned up
+        local btnClickConn = section.Button.MouseButton1Click:Connect(function()
+            APTX:SelectSection(text)
+        end)
+        table.insert(sectionComp._connections, btnClickConn)
+
+        local btnEnterConn = section.Button.MouseEnter:Connect(function()
+            if APTX.CurrentSection ~= text then
+                tw(section.Button, {BackgroundColor3 = Theme.CardHover, BackgroundTransparency = 0.85}, TI_HOVER)
+                label.TextColor3 = Theme.TextPrimary
+                if iconLabel then iconLabel.ImageColor3 = Theme.TextPrimary end
+            end
+        end)
+        table.insert(sectionComp._connections, btnEnterConn)
+
+        local btnLeaveConn = section.Button.MouseLeave:Connect(function()
+            if APTX.CurrentSection ~= text then
+                tw(section.Button, {BackgroundTransparency = 1}, TI_HOVER)
+                label.TextColor3 = Theme.TextSecondary
+                if iconLabel then iconLabel.ImageColor3 = Theme.TextSecondary end
+            end
+        end)
+        table.insert(sectionComp._connections, btnLeaveConn)
+
+        table.insert(APTX.Sections, section)
+
+        if default == true or #APTX.Sections == 1 then
+            APTX:SelectSection(text)
+        end
+
+        function sectionComp:Remove()
+            for _, conn in ipairs(sectionComp._connections) do
+                conn:Disconnect()
+            end
+            sectionComp._connections = {}
+            if section.Container then
+                -- Clean up all CompRegistry entries for children and container
+                for _, child in ipairs(section.Container:GetChildren()) do
+                    CompRegistry[child] = nil
+                end
+                CompRegistry[section.Container] = nil
+            end
+            if section.Button and section.Button.Parent then
+                section.Button:Destroy()
+            end
+            if section.Container and section.Container.Parent then
+                section.Container:Destroy()
+            end
+            sectionComp._frame = nil
+            sectionComp._section = nil
+            section._compRef = nil
+            for i = #APTX.Sections, 1, -1 do
+                if APTX.Sections[i] == section then
+                    table.remove(APTX.Sections, i)
+                    break
+                end
+            end
+            if APTX.CurrentSection == text then
+                APTX.CurrentSection = nil
+            end
+        end
+
+        function sectionComp:Clear()
+            local toRemove = {}
+            for _, child in ipairs(section.Container:GetChildren()) do
+                -- Skip layout, padding, and empty placeholder; remove everything else
+                if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
+                    table.insert(toRemove, child)
+                end
+            end
+            for _, child in ipairs(toRemove) do
+                local childComp = CompRegistry[child]
+                if childComp and childComp._connections then
+                    for _, conn in ipairs(childComp._connections) do
+                        conn:Disconnect()
+                    end
+                    childComp._connections = {}
+                end
+                CompRegistry[child] = nil
+                child:Destroy()
+            end
+        end
+
+        return sectionComp
+    end)
+    if not ok then
+        warn("[APTX:Section] Error creando secci├│n '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
+    end
+    return result
 end
 
 function APTX:SelectSection(name)
@@ -1126,90 +1187,96 @@ function APTX:Button(sectionName, text, icon, callback)
         icon = nil
     end
 
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
-
-    local card, stroke, layout = makeCard(section.Container)
-    card.Size = UDim2.new(1, 0, 0, 44)
-    -- Destroy the horizontal layout from makeCard for manual positioning
-    layout:Destroy()
-
-    local iconImg
-    if icon then
-        iconImg = newI(icon, 16, card)
-        iconImg.Position = UDim2.new(0, 0, 0.5, -8)
-    end
-
-    -- Label fills remaining space
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, 0, 1, 0),
-        Position = UDim2.new(0, icon and 22 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, card)
-
-    local comp = {}
-    local cb = callback
-    initComponent(comp, card, section)
-
-    initHover(comp, card, stroke)
-
-    -- Track tweens and their connections for proper cleanup
-    comp._tweens = {}
-
-    local clickConn = card.MouseButton1Click:Connect(function()
-        if comp._disabled then return end
-
-        -- Cancel previous pending tweens to prevent overlap
-        for _, t in ipairs(comp._tweens) do
-            t:Cancel()
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
         end
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 44)
+        -- Destroy the horizontal layout from makeCard for manual positioning
+        layout:Destroy()
+
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, card)
+            iconImg.Position = UDim2.new(0, 0, 0.5, -8)
+        end
+
+        -- Label fills remaining space
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, 0, 1, 0),
+            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, card)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        -- Track tweens and their connections for proper cleanup
         comp._tweens = {}
 
-        local ts = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Theme.Accent})
-        ts:Play()
-        table.insert(comp._tweens, ts)
-        local tsConn = ts.Completed:Connect(function()
-            if card and card.Parent then
-                tw(card, {BackgroundColor3 = Theme.Card}, TI_BACK)
-            end
-        end)
-        table.insert(comp._connections, tsConn)
+        local clickConn = card.MouseButton1Click:Connect(function()
+            if comp._disabled then return end
 
-        local pt = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 42)})
-        pt:Play()
-        table.insert(comp._tweens, pt)
-        local ptConn = pt.Completed:Connect(function()
-            if card and card.Parent then
-                tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+            -- Cancel previous pending tweens to prevent overlap
+            for _, t in ipairs(comp._tweens) do
+                t:Cancel()
             end
-        end)
-        table.insert(comp._connections, ptConn)
+            comp._tweens = {}
 
-        if cb then cb() end
+            local ts = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Theme.Accent})
+            ts:Play()
+            table.insert(comp._tweens, ts)
+            local tsConn = ts.Completed:Connect(function()
+                if card and card.Parent then
+                    tw(card, {BackgroundColor3 = Theme.Card}, TI_BACK)
+                end
+            end)
+            table.insert(comp._connections, tsConn)
+
+            local pt = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 42)})
+            pt:Play()
+            table.insert(comp._tweens, pt)
+            local ptConn = pt.Completed:Connect(function()
+                if card and card.Parent then
+                    tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+                end
+            end)
+            table.insert(comp._connections, ptConn)
+
+            if cb then cb() end
+        end)
+        table.insert(comp._connections, clickConn)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then
+                card.Name = params.text
+                label.Text = params.text
+            end
+            if params.callback then
+                cb = params.callback
+            end
+        end
+
+        return comp
     end)
-    table.insert(comp._connections, clickConn)
-
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then
-            card.Name = params.text
-            label.Text = params.text
-        end
-        if params.callback then
-            cb = params.callback
-        end
+    if not ok then
+        warn("[APTX:Button] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
     end
-
-    return comp
+    return result
 end
 
 --- Toggle component
@@ -1220,115 +1287,126 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         icon = nil
     end
 
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
-
-    local isOn = default == true
-    local debounce = false
-
-    local card, stroke, layout = makeCard(section.Container)
-    card.Size = UDim2.new(1, 0, 0, 44)
-    layout:Destroy()
-
-    local iconImg
-    if icon then
-        iconImg = newI(icon, 16, card)
-        iconImg.Position = UDim2.new(0, 0, 0.5, -8)
-    end
-
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, -72, 1, 0),
-        Position = UDim2.new(0, icon and 22 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, card)
-
-    local track = newB({
-        Name = "Track",
-        Size = UDim2.new(0, 44, 0, 24),
-        Position = UDim2.new(1, -44, 0.5, -12),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-        Text = "",
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, card)
-    newC(track, 12)
-
-    local knob = newF({
-        Name = "Knob",
-        Size = UDim2.new(0, 20, 0, 20),
-        Position = UDim2.new(0, 2, 0.5, -10),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0,
-    }, track)
-    newC(knob, 10)
-
-    local comp = {}
-    local cb = callback
-    initComponent(comp, card, section)
-
-    initHover(comp, card, stroke)
-
-    local function setToggleState(state, instant)
-        isOn = state
-        local kPos = isOn and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-        local tColor = isOn and Theme.Success or Color3.fromRGB(40, 40, 40)
-        if instant then
-            knob.Position = kPos
-            track.BackgroundColor3 = tColor
-        else
-            tw(knob, {Position = kPos}, TI_MED)
-            tw(track, {BackgroundColor3 = tColor}, TI_MED)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
         end
-    end
 
-    if isOn then
-        setToggleState(true, true)
-    end
+        local isOn = default == true
+        local debounce = false
 
-    track.MouseButton1Click:Connect(function()
-        if comp._disabled then return end
-        if debounce then return end
-        debounce = true
-        setToggleState(not isOn)
-        if cb then cb(isOn) end
-        task.delay(0.1, function()
-            debounce = false
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 44)
+        layout:Destroy()
+
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, card)
+            iconImg.Position = UDim2.new(0, 0, 0.5, -8)
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -72, 1, 0),
+            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, card)
+
+        local track = newB({
+            Name = "Track",
+            Size = UDim2.new(0, 44, 0, 24),
+            Position = UDim2.new(1, -44, 0.5, -12),
+            BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+            Text = "",
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+        }, card)
+        newC(track, 12)
+
+        local knob = newF({
+            Name = "Knob",
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(0, 2, 0.5, -10),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+        }, track)
+        newC(knob, 10)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        local function setToggleState(state, instant)
+            isOn = state
+            local kPos = isOn and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+            local tColor = isOn and Theme.Success or Color3.fromRGB(40, 40, 40)
+            if instant then
+                knob.Position = kPos
+                track.BackgroundColor3 = tColor
+            else
+                tw(knob, {Position = kPos}, TI_MED)
+                tw(track, {BackgroundColor3 = tColor}, TI_MED)
+            end
+        end
+
+        if isOn then
+            setToggleState(true, true)
+        end
+
+        local function toggleAction()
+            if comp._disabled then return end
+            if debounce then return end
+            debounce = true
+            setToggleState(not isOn)
+            if cb then cb(isOn) end
+            task.delay(0.1, function()
+                debounce = false
+            end)
+        end
+
+        track.MouseButton1Click:Connect(toggleAction)
+
+        -- Also toggle when clicking anywhere on the card (not just the track)
+        card.MouseButton1Click:Connect(toggleAction)
+
+        track.MouseEnter:Connect(function()
+            tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
         end)
-    end)
+        track.MouseLeave:Connect(function()
+            tw(knob, {Size = UDim2.new(0, 20, 0, 20)}, TI_HOVER)
+        end)
 
-    track.MouseEnter:Connect(function()
-        tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
-    end)
-    track.MouseLeave:Connect(function()
-        tw(knob, {Size = UDim2.new(0, 20, 0, 20)}, TI_HOVER)
-    end)
-
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then
-            label.Text = params.text
-            card.Name = params.text
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then
+                label.Text = params.text
+                card.Name = params.text
+            end
+            if params.value ~= nil then
+                setToggleState(params.value)
+            end
+            if params.callback then cb = params.callback end
         end
-        if params.value ~= nil then
-            setToggleState(params.value)
+
+        function comp:GetValue()
+            return isOn
         end
-        if params.callback then cb = params.callback end
-    end
 
-    function comp:GetValue()
-        return isOn
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Toggle] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
     end
-
-    return comp
+    return result
 end
 
 --- Slider component
@@ -1339,554 +1417,578 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         icon = nil
     end
 
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
-
-    if max == min then
-        max = min + 1
-        log("WARNING: Slider min==max, adjusted max to", max)
-    end
-
-    local value = default or min
-
-    local card, stroke, layout = makeCard(section.Container)
-    card.Size = UDim2.new(1, 0, 0, 56)
-    layout:Destroy()
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 12)
-    pad.PaddingRight = UDim.new(0, 12)
-    pad.PaddingTop = UDim.new(0, 8)
-    pad.PaddingBottom = UDim.new(0, 8)
-    pad.Parent = card
-
-    local topRow = newF({
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-    }, card)
-
-    if icon then
-        local ip = newI(icon, 14, topRow)
-        ip.ImageColor3 = Theme.TextSecondary
-        ip.Position = UDim2.new(0, 0, 0.5, -7)
-    end
-
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, -50, 1, 0),
-        Position = UDim2.new(0, icon and 20 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, topRow)
-
-    local valueLabel = newL({
-        Name = "ValueLabel",
-        Size = UDim2.new(0, 40, 1, 0),
-        Position = UDim2.new(1, -40, 0, 0),
-        BackgroundTransparency = 1,
-        Text = tostring(value),
-        TextColor3 = Theme.TextSecondary,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Right,
-    }, topRow)
-
-    local track = newF({
-        Name = "Track",
-        Size = UDim2.new(1, 0, 0, 6),
-        Position = UDim2.new(0, 0, 1, -6),
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        BorderSizePixel = 0,
-        Active = true,
-    }, card)
-    newC(track, 3)
-
-    local fill = newF({
-        Name = "Fill",
-        Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
-        BackgroundColor3 = Theme.Accent,
-        BorderSizePixel = 0,
-    }, track)
-    newC(fill, 3)
-
-    local knob = newF({
-        Name = "Knob",
-        Size = UDim2.new(0, 18, 0, 18),
-        Position = UDim2.new((value - min) / (max - min), -9, 0.5, -9),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0,
-    }, track)
-    newC(knob, 9)
-
-    local comp = {}
-    local cb = callback
-    initComponent(comp, card, section)
-
-    initHover(comp, card, stroke)
-    local dragging = false
-
-    local function updateSlider(input)
-        if comp._disabled then return end
-        if not card or not card.Parent then return end
-        local relX = input.Position.X - track.AbsolutePosition.X
-        local trackW = track.AbsoluteSize.X
-        if trackW <= 0 then return end
-        local pos = clamp(relX / trackW, 0, 1)
-        value = math.floor(min + (max - min) * pos + 0.5)
-        valueLabel.Text = tostring(value)
-        fill.Size = UDim2.new(pos, 0, 1, 0)
-        knob.Position = UDim2.new(pos, -9, 0.5, -9)
-        if cb then cb(value) end
-    end
-
-    -- Track these connections so they can be cleaned up
-    local inputBeganConn = track.InputBegan:Connect(function(input)
-        if comp._disabled then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            updateSlider(input)
-            tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
         end
-    end)
-    table.insert(comp._connections, inputBeganConn)
 
-    local inputEndedConn = track.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            tw(knob, {Size = UDim2.new(0, 18, 0, 18)}, TI_HOVER)
+        if max == min then
+            max = min + 1
+            log("WARNING: Slider min==max, adjusted max to", max)
         end
-    end)
-    table.insert(comp._connections, inputEndedConn)
 
-    local uisConn = UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateSlider(input)
-        end
-    end)
-    table.insert(comp._connections, uisConn)
+        local value = default or min
 
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then label.Text = params.text end
-        local minChanged = params.min ~= nil
-        local maxChanged = params.max ~= nil
-        if minChanged then min = params.min end
-        if maxChanged then
-            max = params.max
-            if max == min then max = min + 1 end
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 56)
+        layout:Destroy()
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 12)
+        pad.PaddingRight = UDim.new(0, 12)
+        pad.PaddingTop = UDim.new(0, 8)
+        pad.PaddingBottom = UDim.new(0, 8)
+        pad.Parent = card
+
+        local topRow = newF({
+            Size = UDim2.new(1, 0, 0, 18),
+            BackgroundTransparency = 1,
+        }, card)
+
+        if icon then
+            local ip = newI(icon, 14, topRow)
+            ip.ImageColor3 = Theme.TextSecondary
+            ip.Position = UDim2.new(0, 0, 0.5, -7)
         end
-        -- Re-clamp value after min/max changes
-        if minChanged or maxChanged then
-            value = clamp(value, min, max)
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -50, 1, 0),
+            Position = UDim2.new(0, icon and 20 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, topRow)
+
+        local valueLabel = newL({
+            Name = "ValueLabel",
+            Size = UDim2.new(0, 40, 1, 0),
+            Position = UDim2.new(1, -40, 0, 0),
+            BackgroundTransparency = 1,
+            Text = tostring(value),
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Right,
+        }, topRow)
+
+        local track = newF({
+            Name = "Track",
+            Size = UDim2.new(1, 0, 0, 6),
+            Position = UDim2.new(0, 0, 1, -6),
+            BackgroundColor3 = Color3.fromRGB(38, 38, 38),
+            BorderSizePixel = 0,
+            Active = true,
+        }, card)
+        newC(track, 3)
+
+        local fill = newF({
+            Name = "Fill",
+            Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
+            BackgroundColor3 = Theme.Accent,
+            BorderSizePixel = 0,
+        }, track)
+        newC(fill, 3)
+
+        local knob = newF({
+            Name = "Knob",
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new((value - min) / (max - min), -9, 0.5, -9),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+        }, track)
+        newC(knob, 9)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+        local dragging = false
+
+        local function updateSlider(input)
+            if comp._disabled then return end
+            if not card or not card.Parent then return end
+            local relX = input.Position.X - track.AbsolutePosition.X
+            local trackW = track.AbsoluteSize.X
+            if trackW <= 0 then return end
+            local pos = clamp(relX / trackW, 0, 1)
+            value = math.floor(min + (max - min) * pos + 0.5)
+            valueLabel.Text = tostring(value)
+            fill.Size = UDim2.new(pos, 0, 1, 0)
+            knob.Position = UDim2.new(pos, -9, 0.5, -9)
+            if cb then cb(value) end
+        end
+
+        -- Track these connections so they can be cleaned up
+        local inputBeganConn = track.InputBegan:Connect(function(input)
+            if comp._disabled then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                updateSlider(input)
+                tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
+            end
+        end)
+        table.insert(comp._connections, inputBeganConn)
+
+        local inputEndedConn = track.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+                tw(knob, {Size = UDim2.new(0, 18, 0, 18)}, TI_HOVER)
+            end
+        end)
+        table.insert(comp._connections, inputEndedConn)
+
+        local uisConn = UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                updateSlider(input)
+            end
+        end)
+        table.insert(comp._connections, uisConn)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            local minChanged = params.min ~= nil
+            local maxChanged = params.max ~= nil
+            if minChanged then min = params.min end
+            if maxChanged then
+                max = params.max
+                if max == min then max = min + 1 end
+            end
+            -- Re-clamp value after min/max changes
+            if minChanged or maxChanged then
+                value = clamp(value, min, max)
+                local pos = (value - min) / (max - min)
+                valueLabel.Text = tostring(value)
+                fill.Size = UDim2.new(pos, 0, 1, 0)
+                knob.Position = UDim2.new(pos, -9, 0.5, -9)
+            end
+            if params.value ~= nil then
+                value = clamp(params.value, min, max)
+                local pos = (value - min) / (max - min)
+                valueLabel.Text = tostring(value)
+                fill.Size = UDim2.new(pos, 0, 1, 0)
+                knob.Position = UDim2.new(pos, -9, 0.5, -9)
+            end
+            if params.callback then cb = params.callback end
+        end
+
+        function comp:GetValue()
+            return value
+        end
+
+        function comp:SetValue(v)
+            value = clamp(v, min, max)
             local pos = (value - min) / (max - min)
             valueLabel.Text = tostring(value)
             fill.Size = UDim2.new(pos, 0, 1, 0)
             knob.Position = UDim2.new(pos, -9, 0.5, -9)
         end
-        if params.value ~= nil then
-            value = clamp(params.value, min, max)
-            local pos = (value - min) / (max - min)
-            valueLabel.Text = tostring(value)
-            fill.Size = UDim2.new(pos, 0, 1, 0)
-            knob.Position = UDim2.new(pos, -9, 0.5, -9)
-        end
-        if params.callback then cb = params.callback end
-    end
 
-    function comp:GetValue()
-        return value
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Slider] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
     end
-
-    function comp:SetValue(v)
-        value = clamp(v, min, max)
-        local pos = (value - min) / (max - min)
-        valueLabel.Text = tostring(value)
-        fill.Size = UDim2.new(pos, 0, 1, 0)
-        knob.Position = UDim2.new(pos, -9, 0.5, -9)
-    end
-
-    return comp
+    return result
 end
 
 --- Menu component
 
 function APTX:Menu(sectionName, text, placeholder, icon, options, default, callback)
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
 
-    local isOpen = false
-    local selected = default or options[1]
-    local currentOptions = {}
-    for _, v in ipairs(options) do table.insert(currentOptions, v) end
+        local isOpen = false
+        local selected = default or options[1]
+        local currentOptions = {}
+        for _, v in ipairs(options) do table.insert(currentOptions, v) end
 
-    local card, stroke, layout = makeCard(section.Container)
-    card.Size = UDim2.new(1, 0, 0, 44)
-    card.ClipsDescendants = true
-    layout:Destroy()
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 12)
-    pad.PaddingRight = UDim.new(0, 12)
-    pad.Parent = card
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 44)
+        card.ClipsDescendants = true
+        layout:Destroy()
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 12)
+        pad.PaddingRight = UDim.new(0, 12)
+        pad.Parent = card
 
-    local topRow = newF({
-        Size = UDim2.new(1, 0, 0, 44),
-        BackgroundTransparency = 1,
-    }, card)
+        local topRow = newF({
+            Size = UDim2.new(1, 0, 0, 44),
+            BackgroundTransparency = 1,
+        }, card)
 
-    local iconImg
-    if icon then
-        iconImg = newI(icon, 16, topRow)
-        iconImg.Position = UDim2.new(0, 0, 0.5, -8)
-    end
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, topRow)
+            iconImg.Position = UDim2.new(0, 0, 0.5, -8)
+        end
 
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, -60, 1, 0),
-        Position = UDim2.new(0, icon and 22 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = placeholder or text,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    }, topRow)
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -60, 1, 0),
+            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = placeholder or text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+        }, topRow)
 
-    local chevron = newL({
-        Name = "Chevron",
-        Size = UDim2.new(0, 16, 0, 16),
-        Position = UDim2.new(1, -16, 0.5, -8),
-        BackgroundTransparency = 1,
-        Text = "▾",
-        TextColor3 = Theme.TextSecondary,
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-    }, topRow)
+        local chevron = newL({
+            Name = "Chevron",
+            Size = UDim2.new(0, 16, 0, 16),
+            Position = UDim2.new(1, -16, 0.5, -8),
+            BackgroundTransparency = 1,
+            Text = "▾",
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.Gotham,
+            TextSize = 10,
+        }, topRow)
 
-    local dropBtn = newB({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, topRow)
+        local dropBtn = newB({
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+        }, topRow)
 
-    local optionsList = newF({
-        Name = "OptionsList",
-        Size = UDim2.new(1, 0, 0, 0),
-        Position = UDim2.new(0, 0, 0, 44),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-    }, card)
+        local optionsList = newF({
+            Name = "OptionsList",
+            Size = UDim2.new(1, 0, 0, 0),
+            Position = UDim2.new(0, 0, 0, 44),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+        }, card)
 
-    local optLayout = Instance.new("UIListLayout")
-    optLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    optLayout.Padding = UDim.new(0, 1)
-    optLayout.Parent = optionsList
+        local optLayout = Instance.new("UIListLayout")
+        optLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        optLayout.Padding = UDim.new(0, 1)
+        optLayout.Parent = optionsList
 
-    local comp = {}
-    local cb = callback
-    initComponent(comp, card, section)
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
 
-    local optionBtns = {}
-    local function closeOutsideClick(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if isOpen then
-                local pos = input.Position
-                local absPos = card.AbsolutePosition
-                local absSize = card.AbsoluteSize
-                if pos.X < absPos.X or pos.X > absPos.X + absSize.X or pos.Y < absPos.Y or pos.Y > absPos.Y + absSize.Y then
+        local optionBtns = {}
+        local function closeOutsideClick(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                if isOpen then
+                    local pos = input.Position
+                    local absPos = card.AbsolutePosition
+                    local absSize = card.AbsoluteSize
+                    if pos.X < absPos.X or pos.X > absPos.X + absSize.X or pos.Y < absPos.Y or pos.Y > absPos.Y + absSize.Y then
+                        isOpen = false
+                        tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
+                        tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
+                        tw(chevron, {Rotation = 0}, TI_MED)
+                    end
+                end
+            end
+        end
+
+        local function rebuildOptions()
+            for _, btn in ipairs(optionBtns) do
+                btn:Destroy()
+            end
+            optionBtns = {}
+
+            for _, opt in ipairs(currentOptions) do
+                local ob = newB({
+                    Size = UDim2.new(1, 0, 0, 36),
+                    BackgroundColor3 = Color3.new(0, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = "",
+                    BorderSizePixel = 0,
+                    AutoButtonColor = false,
+                }, optionsList)
+
+                local optLabel = newL({
+                    Size = UDim2.new(1, -36, 1, 0),
+                    Position = UDim2.new(0, 0, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = opt,
+                    TextColor3 = opt == selected and Theme.Accent or Theme.TextSecondary,
+                    Font = Enum.Font.Gotham,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                }, ob)
+
+                local checkmark = newL({
+                    Name = "Checkmark",
+                    Size = UDim2.new(0, 16, 0, 16),
+                    Position = UDim2.new(1, -24, 0.5, -8),
+                    BackgroundTransparency = 1,
+                    Text = opt == selected and "✓" or "",
+                    TextColor3 = Theme.Accent,
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 12,
+                }, ob)
+
+                ob.MouseEnter:Connect(function()
+                    tw(ob, {BackgroundColor3 = Color3.fromRGB(32, 32, 32), BackgroundTransparency = 0.85}, TI_HOVER)
+                end)
+                ob.MouseLeave:Connect(function()
+                    tw(ob, {BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1}, TI_HOVER)
+                end)
+                ob.MouseButton1Click:Connect(function()
+                    if comp._disabled then return end
+                    selected = opt
+                    label.Text = selected
+                    if cb then cb(selected) end
+                    for _, btn in ipairs(optionBtns) do
+                        local ol = btn:FindFirstChildOfClass("TextLabel")
+                        local cm = btn:FindFirstChild("Checkmark")
+                        if ol then ol.TextColor3 = Theme.TextSecondary end
+                        if cm then cm.Text = "" end
+                    end
+                    local ol = ob:FindFirstChildOfClass("TextLabel")
+                    local cm = ob:FindFirstChild("Checkmark")
+                    if ol then ol.TextColor3 = Theme.Accent end
+                    if cm then cm.Text = "✓" end
+                    isOpen = false
+                    tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
+                    tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
+                    tw(chevron, {Rotation = 0}, TI_MED)
+                end)
+                table.insert(optionBtns, ob)
+            end
+        end
+
+        rebuildOptions()
+
+        dropBtn.MouseButton1Click:Connect(function()
+            if comp._disabled then return end
+            isOpen = not isOpen
+            local listH = isOpen and (#currentOptions * 37) or 0
+            local cardH = isOpen and (44 + listH) or 44
+            tw(card, {Size = UDim2.new(1, 0, 0, cardH)}, TI_MED)
+            tw(optionsList, {Size = UDim2.new(1, 0, 0, listH)}, TI_MED)
+            tw(chevron, {Rotation = isOpen and 180 or 0}, TI_MED)
+        end)
+
+        local outsideConn = UserInputService.InputBegan:Connect(closeOutsideClick)
+        table.insert(comp._connections, outsideConn)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.options then
+                currentOptions = {}
+                for _, v in ipairs(params.options) do table.insert(currentOptions, v) end
+                rebuildOptions()
+                if isOpen then
                     isOpen = false
                     tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
                     tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
                     tw(chevron, {Rotation = 0}, TI_MED)
                 end
             end
-        end
-    end
-
-    local function rebuildOptions()
-        for _, btn in ipairs(optionBtns) do
-            btn:Destroy()
-        end
-        optionBtns = {}
-
-        for _, opt in ipairs(currentOptions) do
-            local ob = newB({
-                Size = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3 = Color3.new(0, 0, 0),
-                BackgroundTransparency = 1,
-                Text = "",
-                BorderSizePixel = 0,
-                AutoButtonColor = false,
-            }, optionsList)
-
-            local optLabel = newL({
-                Size = UDim2.new(1, -36, 1, 0),
-                Position = UDim2.new(0, 0, 0, 0),
-                BackgroundTransparency = 1,
-                Text = opt,
-                TextColor3 = opt == selected and Theme.Accent or Theme.TextSecondary,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                TextXAlignment = Enum.TextXAlignment.Left,
-            }, ob)
-
-            local checkmark = newL({
-                Name = "Checkmark",
-                Size = UDim2.new(0, 16, 0, 16),
-                Position = UDim2.new(1, -24, 0.5, -8),
-                BackgroundTransparency = 1,
-                Text = opt == selected and "✓" or "",
-                TextColor3 = Theme.Accent,
-                Font = Enum.Font.GothamBold,
-                TextSize = 12,
-            }, ob)
-
-            ob.MouseEnter:Connect(function()
-                tw(ob, {BackgroundColor3 = Color3.fromRGB(32, 32, 32), BackgroundTransparency = 0.85}, TI_HOVER)
-            end)
-            ob.MouseLeave:Connect(function()
-                tw(ob, {BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1}, TI_HOVER)
-            end)
-            ob.MouseButton1Click:Connect(function()
-                if comp._disabled then return end
-                selected = opt
+            if params.selected then
+                selected = params.selected
                 label.Text = selected
-                if cb then cb(selected) end
-                for _, btn in ipairs(optionBtns) do
-                    local ol = btn:FindFirstChildOfClass("TextLabel")
-                    local cm = btn:FindFirstChild("Checkmark")
-                    if ol then ol.TextColor3 = Theme.TextSecondary end
-                    if cm then cm.Text = "" end
-                end
-                local ol = ob:FindFirstChildOfClass("TextLabel")
-                local cm = ob:FindFirstChild("Checkmark")
-                if ol then ol.TextColor3 = Theme.Accent end
-                if cm then cm.Text = "✓" end
-                isOpen = false
-                tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
-                tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
-                tw(chevron, {Rotation = 0}, TI_MED)
-            end)
-            table.insert(optionBtns, ob)
-        end
-    end
-
-    rebuildOptions()
-
-    dropBtn.MouseButton1Click:Connect(function()
-        if comp._disabled then return end
-        isOpen = not isOpen
-        local listH = isOpen and (#currentOptions * 37) or 0
-        local cardH = isOpen and (44 + listH) or 44
-        tw(card, {Size = UDim2.new(1, 0, 0, cardH)}, TI_MED)
-        tw(optionsList, {Size = UDim2.new(1, 0, 0, listH)}, TI_MED)
-        tw(chevron, {Rotation = isOpen and 180 or 0}, TI_MED)
-    end)
-
-    local outsideConn = UserInputService.InputBegan:Connect(closeOutsideClick)
-    table.insert(comp._connections, outsideConn)
-
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then label.Text = params.text end
-        if params.options then
-            currentOptions = {}
-            for _, v in ipairs(params.options) do table.insert(currentOptions, v) end
-            rebuildOptions()
-            if isOpen then
-                isOpen = false
-                tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
-                tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
-                tw(chevron, {Rotation = 0}, TI_MED)
             end
+            if params.callback then cb = params.callback end
         end
-        if params.selected then
-            selected = params.selected
-            label.Text = selected
+
+        function comp:GetValue()
+            return selected
         end
-        if params.callback then cb = params.callback end
-    end
 
-    function comp:GetValue()
-        return selected
-    end
+        function comp:SetOptions(newOptions)
+            currentOptions = {}
+            for _, v in ipairs(newOptions) do table.insert(currentOptions, v) end
+            rebuildOptions()
+        end
 
-    function comp:SetOptions(newOptions)
-        currentOptions = {}
-        for _, v in ipairs(newOptions) do table.insert(currentOptions, v) end
-        rebuildOptions()
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Menu] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
     end
-
-    return comp
+    return result
 end
 
 --- Input component
 
 function APTX:Input(sectionName, text, icon, placeholder, callback)
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
-
-    local card, stroke, layout = makeCard(section.Container)
-    card.Size = UDim2.new(1, 0, 0, 56)
-    layout:Destroy()
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 12)
-    pad.PaddingRight = UDim.new(0, 12)
-    pad.PaddingTop = UDim.new(0, 6)
-    pad.PaddingBottom = UDim.new(0, 6)
-    pad.Parent = card
-
-    local topRow = newF({
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-    }, card)
-
-    if icon then
-        local ip = newI(icon, 14, topRow)
-        ip.ImageColor3 = Theme.TextSecondary
-        ip.Position = UDim2.new(0, 0, 0.5, -7)
-    end
-
-    local label = newL({
-        Name = "Label",
-        Size = UDim2.new(1, 0, 1, 0),
-        Position = UDim2.new(0, icon and 20 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, topRow)
-
-    local inputBox = Instance.new("TextBox")
-    inputBox.Name = "InputBox"
-    inputBox.Size = UDim2.new(1, 0, 0, 26)
-    inputBox.Position = UDim2.new(0, 0, 1, -26)
-    inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    inputBox.BorderSizePixel = 0
-    inputBox.PlaceholderText = placeholder or ""
-    inputBox.PlaceholderColor3 = Theme.TextDisabled
-    inputBox.Text = ""
-    inputBox.TextColor3 = Theme.TextPrimary
-    inputBox.Font = Enum.Font.Gotham
-    inputBox.TextSize = 12
-    inputBox.TextXAlignment = Enum.TextXAlignment.Left
-    inputBox.ClearTextOnFocus = false
-    inputBox.Parent = card
-    newC(inputBox, 6)
-    local inputStroke = newS(inputBox, Theme.Border, 1)
-
-    local inputPad = Instance.new("UIPadding")
-    inputPad.PaddingLeft = UDim.new(0, 8)
-    inputPad.Parent = inputBox
-
-    local comp = {}
-    local cb = callback
-    initComponent(comp, card, section)
-
-    initHover(comp, card, stroke)
-
-    inputBox.Focused:Connect(function()
-        tw(inputStroke, {Color = Theme.Accent}, TI_HOVER)
-    end)
-
-    inputBox.FocusLost:Connect(function(enterPressed)
-        tw(inputStroke, {Color = Theme.Border}, TI_HOVER)
-        if comp._disabled then return end
-        if enterPressed and cb then
-            cb(inputBox.Text)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
         end
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 56)
+        layout:Destroy()
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 12)
+        pad.PaddingRight = UDim.new(0, 12)
+        pad.PaddingTop = UDim.new(0, 6)
+        pad.PaddingBottom = UDim.new(0, 6)
+        pad.Parent = card
+
+        local topRow = newF({
+            Size = UDim2.new(1, 0, 0, 18),
+            BackgroundTransparency = 1,
+        }, card)
+
+        if icon then
+            local ip = newI(icon, 14, topRow)
+            ip.ImageColor3 = Theme.TextSecondary
+            ip.Position = UDim2.new(0, 0, 0.5, -7)
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, 0, 1, 0),
+            Position = UDim2.new(0, icon and 20 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, topRow)
+
+        local inputBox = Instance.new("TextBox")
+        inputBox.Name = "InputBox"
+        inputBox.Size = UDim2.new(1, 0, 0, 26)
+        inputBox.Position = UDim2.new(0, 0, 1, -26)
+        inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        inputBox.BorderSizePixel = 0
+        inputBox.PlaceholderText = placeholder or ""
+        inputBox.PlaceholderColor3 = Theme.TextDisabled
+        inputBox.Text = ""
+        inputBox.TextColor3 = Theme.TextPrimary
+        inputBox.Font = Enum.Font.Gotham
+        inputBox.TextSize = 12
+        inputBox.TextXAlignment = Enum.TextXAlignment.Left
+        inputBox.ClearTextOnFocus = false
+        inputBox.Parent = card
+        newC(inputBox, 6)
+        local inputStroke = newS(inputBox, Theme.Border, 1)
+
+        local inputPad = Instance.new("UIPadding")
+        inputPad.PaddingLeft = UDim.new(0, 8)
+        inputPad.Parent = inputBox
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        inputBox.Focused:Connect(function()
+            tw(inputStroke, {Color = Theme.Accent}, TI_HOVER)
+        end)
+
+        inputBox.FocusLost:Connect(function(enterPressed)
+            tw(inputStroke, {Color = Theme.Border}, TI_HOVER)
+            if comp._disabled then return end
+            if enterPressed and cb then
+                cb(inputBox.Text)
+            end
+        end)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.placeholder then inputBox.PlaceholderText = params.placeholder end
+            if params.value then inputBox.Text = params.value end
+            if params.callback then cb = params.callback end
+        end
+
+        function comp:GetValue()
+            return inputBox.Text
+        end
+
+        function comp:SetValue(v)
+            inputBox.Text = v or ""
+        end
+
+        return comp
     end)
-
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then label.Text = params.text end
-        if params.placeholder then inputBox.PlaceholderText = params.placeholder end
-        if params.value then inputBox.Text = params.value end
-        if params.callback then cb = params.callback end
+    if not ok then
+        warn("[APTX:Input] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
     end
-
-    function comp:GetValue()
-        return inputBox.Text
-    end
-
-    function comp:SetValue(v)
-        inputBox.Text = v or ""
-    end
-
-    return comp
+    return result
 end
 
 --- Label component
 
 function APTX:Label(sectionName, text)
-    local section = APTX:GetSection(sectionName)
-    if not section then
-        log("ERROR: Section not found:", sectionName)
-        return
-    end
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
 
-    local isSeparator = text:match("^[-=━]+$")
-    local label
-    if isSeparator then
-        label = newF({
-            Name = "Separator",
-            Size = UDim2.new(1, 0, 0, 1),
-            BackgroundColor3 = Theme.Border,
-            BorderSizePixel = 0,
-        }, section.Container)
-    else
-        label = newL({
-            Name = text,
-            Size = UDim2.new(1, 0, 0, 20),
-            BackgroundTransparency = 1,
-            Text = text,
-            TextColor3 = Theme.TextSecondary,
-            Font = Enum.Font.GothamBold,
-            TextSize = 15,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextWrapped = true,
-        }, section.Container)
-    end
+        local isSeparator = text:match("^[-=━]+$")
+        local label
+        if isSeparator then
+            label = newF({
+                Name = "Separator",
+                Size = UDim2.new(1, 0, 0, 1),
+                BackgroundColor3 = Theme.Border,
+                BorderSizePixel = 0,
+            }, section.Container)
+        else
+            label = newL({
+                Name = text,
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundTransparency = 1,
+                Text = text,
+                TextColor3 = Theme.TextSecondary,
+                Font = Enum.Font.GothamBold,
+                TextSize = 15,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextWrapped = true,
+            }, section.Container)
+        end
 
-    local comp = {}
-    initComponent(comp, label, section)
+        local comp = {}
+        initComponent(comp, label, section)
 
-    function comp:Edit(params)
-        params = params or {}
-        if params.text then
-            if label:IsA("TextLabel") then
-                label.Text = params.text
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then
+                if label:IsA("TextLabel") then
+                    label.Text = params.text
+                end
+            end
+            if params.color and label:IsA("TextLabel") then
+                label.TextColor3 = params.color
             end
         end
-        if params.color and label:IsA("TextLabel") then
-            label.TextColor3 = params.color
-        end
-    end
 
-    function comp:SetText(newText)
-        if label:IsA("TextLabel") then
-            label.Text = newText
+        function comp:SetText(newText)
+            if label:IsA("TextLabel") then
+                label.Text = newText
+            end
         end
-    end
 
-    return comp
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Label] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return nil
+    end
+    return result
 end
 
 --- Notification system
@@ -1899,6 +2001,13 @@ local NOTIF_RIGHT_MARGIN = 2
 local notifCounter = 0
 
 local function repositionStack()
+    -- First clean up dead entries from the stack
+    for i = #NotifStack, 1, -1 do
+        if not NotifStack[i] or not NotifStack[i]._alive then
+            table.remove(NotifStack, i)
+        end
+    end
+
     local bottomOffset = NOTIF_RIGHT_MARGIN
     local visible = {}
     for _, entry in ipairs(NotifStack) do
@@ -1937,383 +2046,390 @@ local function removeFromStack(notif)
 end
 
 function APTX:Notify(params)
-    assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
-    assert(params.title, "[APTX:Notify] params.title es requerido")
-    assert(params.content, "[APTX:Notify] params.content es requerido")
+    local ok, result = pcall(function()
+        assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
+        assert(params.title, "[APTX:Notify] params.title es requerido")
+        assert(params.content, "[APTX:Notify] params.content es requerido")
 
-    local title = params.title
-    local body = params.content
-    local iconTop = params["topbar-icon"]
-    local iconBody = params["content-icon"]
-    local duration = params.duration
-    local sound = params.sound
-    local buttons = params.buttons
-    local notifType = params.type or "neutral"
-    local size = params.size or 1
+        local title = params.title
+        local body = params.content
+        local iconTop = params["topbar-icon"]
+        local iconBody = params["content-icon"]
+        local duration = params.duration
+        local sound = params.sound
+        local buttons = params.buttons
+        local notifType = params.type or "neutral"
+        local size = params.size or 1
 
-    local hasDur = duration and duration > 0
-    local hasBtns = buttons and #buttons > 0
+        local hasDur = duration and duration > 0
+        local hasBtns = buttons and #buttons > 0
 
-    local s = math.max(0.5, math.min(1.5, size or 1))
-    local sW = math.floor(300 * s)
-    local sTOPBAR = math.floor(32 * s)
-    local sBODY = math.floor(36 * s)
-    local sBTN_H = math.floor(32 * s)
-    local sBTN_W = math.floor(90 * s)
-    local sBTN_SZ = math.floor(22 * s)
-    local sPAD = math.floor(14 * s)
-    local sICON = math.floor(14 * s)
+        local s = math.max(0.5, math.min(1.5, size or 1))
+        local sW = math.floor(300 * s)
+        local sTOPBAR = math.floor(32 * s)
+        local sBODY = math.floor(36 * s)
+        local sBTN_H = math.floor(32 * s)
+        local sBTN_W = math.floor(90 * s)
+        local sBTN_SZ = math.floor(22 * s)
+        local sPAD = math.floor(14 * s)
+        local sICON = math.floor(14 * s)
 
-    local btnH = hasBtns and sBTN_H or 0
-    local CARD_H = sTOPBAR + sBODY + (hasBtns and (sBTN_H + 8) or 8) + 2
+        local btnH = hasBtns and sBTN_H or 0
+        local CARD_H = sTOPBAR + sBODY + (hasBtns and (sBTN_H + 8) or 8) + 2
 
-    local accentColors = {
-        info = Theme.Accent,
-        success = Theme.Success,
-        error = Theme.Error,
-        neutral = Theme.Accent,
-    }
+        local accentColors = {
+            info = Theme.Accent,
+            success = Theme.Success,
+            error = Theme.Error,
+            neutral = Theme.Accent,
+        }
 
-    assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
-    local gui = APTX.GUI
+        assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
+        local gui = APTX.GUI
 
-    notifCounter = notifCounter + 1
+        notifCounter = notifCounter + 1
 
-    local Card = newF({
-        Name = "NotifCard_" .. notifCounter,
-        Size = UDim2.new(0, sW, 0, CARD_H),
-        Position = UDim2.new(1, sW + 20, 1, -CARD_H),
-        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        ZIndex = NOTIF_Z_BASE,
-    }, gui)
-    newC(Card, 12)
-    local cardStroke = newS(Card, Theme.Border, 1)
+        local Card = newF({
+            Name = "NotifCard_" .. notifCounter,
+            Size = UDim2.new(0, sW, 0, CARD_H),
+            Position = UDim2.new(1, sW + 20, 1, -CARD_H),
+            BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = NOTIF_Z_BASE,
+        }, gui)
+        newC(Card, 12)
+        local cardStroke = newS(Card, Theme.Border, 1)
 
-    local accentBar = newF({
-        Name = "AccentBar",
-        Size = UDim2.new(0, 3, 1, 0),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = accentColors[notifType] or Theme.Accent,
-        BorderSizePixel = 0,
-        ZIndex = NOTIF_Z_BASE + 1,
-    }, Card)
-    newC(accentBar, 12)
-
-    local TB = newF({
-        Size = UDim2.new(1, -3, 0, sTOPBAR),
-        Position = UDim2.new(0, 3, 0, 0),
-        BackgroundTransparency = 1,
-        ZIndex = NOTIF_Z_BASE + 1,
-    }, Card)
-
-    local closeBtnSize = math.max(1, math.floor(20 * s))
-    local titleX = sPAD
-    if iconTop then
-        local iconLabel = newI(iconTop, sICON, TB)
-        iconLabel.Position = UDim2.new(0, sPAD, 0.5, -sICON / 2)
-        iconLabel.ZIndex = NOTIF_Z_BASE + 2
-        titleX = sPAD + sICON + 6
-    end
-
-    local TitleLbl = newL({
-        Size = UDim2.new(1, -(titleX + closeBtnSize + 8), 1, 0),
-        Position = UDim2.new(0, titleX, 0, 0),
-        BackgroundTransparency = 1,
-        Text = title,
-        Font = Enum.Font.GothamBold,
-        TextSize = math.max(9, math.floor(13 * s)),
-        TextColor3 = Theme.TextPrimary,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = NOTIF_Z_BASE + 2,
-    }, TB)
-
-    local CloseBtn = newB({
-        Size = UDim2.new(0, 20, 0, 20),
-        Position = UDim2.new(1, -(20 + 4), 0.5, -10),
-        BackgroundTransparency = 1,
-        Text = "✕",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = math.max(9, math.floor(12 * s)),
-        Font = Enum.Font.Gotham,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        ZIndex = NOTIF_Z_BASE + 3,
-    }, TB)
-
-    local BodyFrame = newF({
-        Size = UDim2.new(1, -3, 0, sBODY),
-        Position = UDim2.new(0, sPAD + 3, 0, sTOPBAR),
-        BackgroundTransparency = 1,
-        ZIndex = NOTIF_Z_BASE + 1,
-    }, Card)
-
-    local bodyIconFrame
-    if iconBody then
-        bodyIconFrame = newI(iconBody, 16, BodyFrame)
-        bodyIconFrame.Position = UDim2.new(0, 0, 0, 0)
-        bodyIconFrame.ImageColor3 = accentColors[notifType] or Theme.Accent
-        bodyIconFrame.ZIndex = NOTIF_Z_BASE + 2
-    end
-
-    local MsgLbl = newL({
-        Size = UDim2.new(1, -(sPAD + 3), 0, sBODY),
-        Position = UDim2.new(0, iconBody and 22 or 0, 0, 0),
-        BackgroundTransparency = 1,
-        Text = body,
-        Font = Enum.Font.Gotham,
-        TextSize = math.max(8, math.floor(12 * s)),
-        TextColor3 = Theme.TextSecondary,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top,
-        ZIndex = NOTIF_Z_BASE + 2,
-    }, BodyFrame)
-
-    local DividerFill
-    if hasDur then
-        local db = newF({
-            Name = "DurationBar",
-            Size = UDim2.new(1, -3, 0, 2),
-            Position = UDim2.new(0, 3, 1, -2),
-            BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+        local accentBar = newF({
+            Name = "AccentBar",
+            Size = UDim2.new(0, 3, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = accentColors[notifType] or Theme.Accent,
             BorderSizePixel = 0,
             ZIndex = NOTIF_Z_BASE + 1,
         }, Card)
-        DividerFill = newF({
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundColor3 = accentColors[notifType] or Theme.Accent,
-            BorderSizePixel = 0,
-            ZIndex = NOTIF_Z_BASE + 2,
-        }, db)
-    end
+        newC(accentBar, 12)
 
-    if hasBtns then
-        local bc = newF({
-            Size = UDim2.new(1, -3, 0, sBTN_H),
-            Position = UDim2.new(0, 3, 0, sTOPBAR + sBODY),
+        local TB = newF({
+            Size = UDim2.new(1, -3, 0, sTOPBAR),
+            Position = UDim2.new(0, 3, 0, 0),
             BackgroundTransparency = 1,
             ZIndex = NOTIF_Z_BASE + 1,
         }, Card)
-        local btnLayout = Instance.new("UIListLayout")
-        btnLayout.FillDirection = Enum.FillDirection.Horizontal
-        btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-        btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-        btnLayout.Padding = UDim.new(0, 6)
-        btnLayout.Parent = bc
 
-        for i = 1, math.min(#buttons, 3) do
-            local bDef = buttons[i]
-            local bg = bDef.color or Color3.fromRGB(45, 45, 50)
-            local Btn = newB({
-                Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ),
-                BackgroundColor3 = bg,
-                Text = bDef.label or ("Button " .. i),
-                Font = Enum.Font.GothamBold,
-                TextSize = math.max(8, math.floor(11 * s)),
-                TextColor3 = Color3.new(1, 1, 1),
-                BorderSizePixel = 0,
-                AutoButtonColor = false,
-                ZIndex = NOTIF_Z_BASE + 3,
-            }, bc)
-            newC(Btn, math.floor(6 * s))
-            local bs = newS(Btn, Color3.new(1, 1, 1), 1)
-            bs.Transparency = 0.85
-
-            Btn.MouseEnter:Connect(function()
-                tw(Btn, {BackgroundColor3 = bg:Lerp(Color3.new(1, 1, 1), 0.15)}, TI_HOVER)
-            end)
-            Btn.MouseLeave:Connect(function()
-                tw(Btn, {BackgroundColor3 = bg}, TI_HOVER)
-            end)
-            Btn.MouseButton1Down:Connect(function()
-                tw(Btn, {Size = UDim2.new(0, sBTN_W - 4, 0, sBTN_SZ - 2)}, TI_FAST)
-            end)
-            Btn.MouseButton1Up:Connect(function()
-                tw(Btn, {Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ)}, TI_BACK)
-            end)
-            Btn.MouseButton1Click:Connect(function()
-                if bDef.callback then task.spawn(bDef.callback) end
-            end)
+        local closeBtnSize = math.max(1, math.floor(20 * s))
+        local titleX = sPAD
+        if iconTop then
+            local iconLabel = newI(iconTop, sICON, TB)
+            iconLabel.Position = UDim2.new(0, sPAD, 0.5, -sICON / 2)
+            iconLabel.ZIndex = NOTIF_Z_BASE + 2
+            titleX = sPAD + sICON + 6
         end
-    end
 
-    if sound then
-        local snd = Instance.new("Sound")
-        snd.SoundId = sound
-        snd.Volume = 0.6
-        snd.Parent = Card
-        snd:Play()
-        Debris:AddItem(snd, 5)
-    end
+        local TitleLbl = newL({
+            Size = UDim2.new(1, -(titleX + closeBtnSize + 8), 1, 0),
+            Position = UDim2.new(0, titleX, 0, 0),
+            BackgroundTransparency = 1,
+            Text = title,
+            Font = Enum.Font.GothamBold,
+            TextSize = math.max(9, math.floor(13 * s)),
+            TextColor3 = Theme.TextPrimary,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = NOTIF_Z_BASE + 2,
+        }, TB)
 
-    local Notif = {
-        _card = Card,
-        _title = TitleLbl,
-        _msg = MsgLbl,
-        _divFill = DividerFill,
-        _alive = true,
-        _cardH = CARD_H,
-        _cardW = sW,
-        _autoCloseThread = nil,
-    }
+        local CloseBtn = newB({
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(1, -(20 + 4), 0.5, -10),
+            BackgroundTransparency = 1,
+            Text = "✕",
+            TextColor3 = Theme.TextSecondary,
+            TextSize = math.max(9, math.floor(12 * s)),
+            Font = Enum.Font.Gotham,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = NOTIF_Z_BASE + 3,
+        }, TB)
 
-    Card.Destroying:Connect(function()
-        if Notif._alive then
+        local BodyFrame = newF({
+            Size = UDim2.new(1, -3, 0, sBODY),
+            Position = UDim2.new(0, sPAD + 3, 0, sTOPBAR),
+            BackgroundTransparency = 1,
+            ZIndex = NOTIF_Z_BASE + 1,
+        }, Card)
+
+        local bodyIconFrame
+        if iconBody then
+            bodyIconFrame = newI(iconBody, 16, BodyFrame)
+            bodyIconFrame.Position = UDim2.new(0, 0, 0, 0)
+            bodyIconFrame.ImageColor3 = accentColors[notifType] or Theme.Accent
+            bodyIconFrame.ZIndex = NOTIF_Z_BASE + 2
+        end
+
+        local MsgLbl = newL({
+            Size = UDim2.new(1, -(sPAD + 3), 0, sBODY),
+            Position = UDim2.new(0, iconBody and 22 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = body,
+            Font = Enum.Font.Gotham,
+            TextSize = math.max(8, math.floor(12 * s)),
+            TextColor3 = Theme.TextSecondary,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = NOTIF_Z_BASE + 2,
+        }, BodyFrame)
+
+        local DividerFill
+        if hasDur then
+            local db = newF({
+                Name = "DurationBar",
+                Size = UDim2.new(1, -3, 0, 2),
+                Position = UDim2.new(0, 3, 1, -2),
+                BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+                BorderSizePixel = 0,
+                ZIndex = NOTIF_Z_BASE + 1,
+            }, Card)
+            DividerFill = newF({
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundColor3 = accentColors[notifType] or Theme.Accent,
+                BorderSizePixel = 0,
+                ZIndex = NOTIF_Z_BASE + 2,
+            }, db)
+        end
+
+        if hasBtns then
+            local bc = newF({
+                Size = UDim2.new(1, -3, 0, sBTN_H),
+                Position = UDim2.new(0, 3, 0, sTOPBAR + sBODY),
+                BackgroundTransparency = 1,
+                ZIndex = NOTIF_Z_BASE + 1,
+            }, Card)
+            local btnLayout = Instance.new("UIListLayout")
+            btnLayout.FillDirection = Enum.FillDirection.Horizontal
+            btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+            btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+            btnLayout.Padding = UDim.new(0, 6)
+            btnLayout.Parent = bc
+
+            for i = 1, math.min(#buttons, 3) do
+                local bDef = buttons[i]
+                local bg = bDef.color or Color3.fromRGB(45, 45, 50)
+                local Btn = newB({
+                    Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ),
+                    BackgroundColor3 = bg,
+                    Text = bDef.label or ("Button " .. i),
+                    Font = Enum.Font.GothamBold,
+                    TextSize = math.max(8, math.floor(11 * s)),
+                    TextColor3 = Color3.new(1, 1, 1),
+                    BorderSizePixel = 0,
+                    AutoButtonColor = false,
+                    ZIndex = NOTIF_Z_BASE + 3,
+                }, bc)
+                newC(Btn, math.floor(6 * s))
+                local bs = newS(Btn, Color3.new(1, 1, 1), 1)
+                bs.Transparency = 0.85
+
+                Btn.MouseEnter:Connect(function()
+                    tw(Btn, {BackgroundColor3 = bg:Lerp(Color3.new(1, 1, 1), 0.15)}, TI_HOVER)
+                end)
+                Btn.MouseLeave:Connect(function()
+                    tw(Btn, {BackgroundColor3 = bg}, TI_HOVER)
+                end)
+                Btn.MouseButton1Down:Connect(function()
+                    tw(Btn, {Size = UDim2.new(0, sBTN_W - 4, 0, sBTN_SZ - 2)}, TI_FAST)
+                end)
+                Btn.MouseButton1Up:Connect(function()
+                    tw(Btn, {Size = UDim2.new(0, sBTN_W, 0, sBTN_SZ)}, TI_BACK)
+                end)
+                Btn.MouseButton1Click:Connect(function()
+                    if bDef.callback then task.spawn(bDef.callback) end
+                end)
+            end
+        end
+
+        if sound then
+            local snd = Instance.new("Sound")
+            snd.SoundId = sound
+            snd.Volume = 0.6
+            snd.Parent = Card
+            snd:Play()
+            Debris:AddItem(snd, 5)
+        end
+
+        local Notif = {
+            _card = Card,
+            _title = TitleLbl,
+            _msg = MsgLbl,
+            _divFill = DividerFill,
+            _alive = true,
+            _cardH = CARD_H,
+            _cardW = sW,
+            _autoCloseThread = nil,
+        }
+
+        Card.Destroying:Connect(function()
+            if Notif._alive then
+                Notif._alive = false
+                if Notif._autoCloseThread then
+                    task.cancel(Notif._autoCloseThread)
+                    Notif._autoCloseThread = nil
+                end
+                removeFromStack(Notif)
+            end
+        end)
+
+        table.insert(NotifStack, Notif)
+
+        local function fallClose(cb)
+            if not Notif._alive then return end
             Notif._alive = false
+
             if Notif._autoCloseThread then
                 task.cancel(Notif._autoCloseThread)
                 Notif._autoCloseThread = nil
             end
+
             removeFromStack(Notif)
-        end
-    end)
 
-    table.insert(NotifStack, Notif)
-
-    local function fallClose(cb)
-        if not Notif._alive then return end
-        Notif._alive = false
-
-        if Notif._autoCloseThread then
-            task.cancel(Notif._autoCloseThread)
-            Notif._autoCloseThread = nil
-        end
-
-        removeFromStack(Notif)
-
-        if not Card or not Card.Parent then
-            if cb then pcall(cb) end
-            return
-        end
-
-        local cur = Card.Position
-        local t1 = TweenService:Create(Card, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset - 10),
-            Rotation = -2,
-        })
-        t1.Completed:Connect(function()
             if not Card or not Card.Parent then
                 if cb then pcall(cb) end
                 return
             end
-            local t2 = TweenService:Create(Card, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, sW + 80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H * 0.55)),
-                Rotation = 22,
+
+            local cur = Card.Position
+            local t1 = TweenService:Create(Card, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(cur.X.Scale, cur.X.Offset, cur.Y.Scale, cur.Y.Offset - 10),
+                Rotation = -2,
             })
-            TweenService:Create(Card, TweenInfo.new(0.35, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
-                BackgroundTransparency = 0.5,
-            }):Play()
-            t2.Completed:Connect(function()
-                if cb then pcall(cb) end
-                if Card and Card.Parent then
-                    Card:Destroy()
+            t1.Completed:Connect(function()
+                if not Card or not Card.Parent then
+                    if cb then pcall(cb) end
+                    return
                 end
+                local t2 = TweenService:Create(Card, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Position = UDim2.new(1, sW + 80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H * 0.55)),
+                    Rotation = 22,
+                })
+                TweenService:Create(Card, TweenInfo.new(0.35, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
+                    BackgroundTransparency = 0.5,
+                }):Play()
+                t2.Completed:Connect(function()
+                    if cb then pcall(cb) end
+                    if Card and Card.Parent then
+                        Card:Destroy()
+                    end
+                end)
+                t2:Play()
             end)
-            t2:Play()
+            t1:Play()
+        end
+
+        task.delay(0.05, function()
+            repositionStack()
         end)
-        t1:Play()
-    end
 
-    task.delay(0.05, function()
-        repositionStack()
-    end)
+        if hasDur and DividerFill then
+            tw(DividerFill, {Size = UDim2.new(0, 0, 1, 0)}, TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out))
+            local autoThread = task.delay(duration, function()
+                if Notif._alive then fallClose() end
+            end)
+            Notif._autoCloseThread = autoThread
+        end
 
-    if hasDur and DividerFill then
-        tw(DividerFill, {Size = UDim2.new(0, 0, 1, 0)}, TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out))
-        local autoThread = task.delay(duration, function()
+        CloseBtn.MouseButton1Click:Connect(function()
             if Notif._alive then fallClose() end
         end)
-        Notif._autoCloseThread = autoThread
-    end
 
-    CloseBtn.MouseButton1Click:Connect(function()
-        if Notif._alive then fallClose() end
-    end)
+        CloseBtn.MouseEnter:Connect(function()
+            tw(CloseBtn, {TextColor3 = Theme.TextPrimary}, TI_HOVER)
+        end)
+        CloseBtn.MouseLeave:Connect(function()
+            tw(CloseBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
+        end)
 
-    CloseBtn.MouseEnter:Connect(function()
-        tw(CloseBtn, {TextColor3 = Theme.TextPrimary}, TI_HOVER)
-    end)
-    CloseBtn.MouseLeave:Connect(function()
-        tw(CloseBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
-    end)
-
-    function Notif:Destroy()
-        if self._alive then
-            fallClose()
-        elseif self._card and self._card.Parent then
-            self._card:Destroy()
-        end
-    end
-
-    function Notif:Close(cb)
-        if self._alive then fallClose(cb) end
-    end
-
-    function Notif:Edit(p)
-        if not self._alive then return end
-        p = p or {}
-        if p.title then self._title.Text = p.title end
-        if p.content then self._msg.Text = p.content end
-        if p.resetTimer and p.resetTimer > 0 and self._divFill then
-            if self._autoCloseThread then
-                task.cancel(self._autoCloseThread)
-                self._autoCloseThread = nil
+        function Notif:Destroy()
+            if self._alive then
+                fallClose()
+            elseif self._card and self._card.Parent then
+                self._card:Destroy()
             end
-            self._divFill.Size = UDim2.new(1, 0, 1, 0)
-            tw(self._divFill, {Size = UDim2.new(0, 0, 1, 0)}, TweenInfo.new(p.resetTimer, Enum.EasingStyle.Linear, Enum.EasingDirection.Out))
-            local autoThread = task.delay(p.resetTimer, function()
-                if self._alive then fallClose() end
-            end)
-            self._autoCloseThread = autoThread
         end
-    end
 
-    function Notif:Flash(c)
-        if not self._alive then return end
-        local s = self._card:FindFirstChildOfClass("UIStroke")
-        if s then
-            local orig = s.Color
-            s.Color = c or Color3.new(1, 1, 1)
-            tw(s, {Color = orig}, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+        function Notif:Close(cb)
+            if self._alive then fallClose(cb) end
         end
-    end
 
-    function Notif:SetBody(text, pulse)
-        if not self._alive then return end
-        self._msg.Text = text or ""
-        if pulse then
-            tw(self._msg, {TextTransparency = 0.6}, TI_FAST)
-            task.delay(0.15, function()
-                if self._alive then tw(self._msg, {TextTransparency = 0}, TI_SLOW) end
-            end)
+        function Notif:Edit(p)
+            if not self._alive then return end
+            p = p or {}
+            if p.title then self._title.Text = p.title end
+            if p.content then self._msg.Text = p.content end
+            if p.resetTimer and p.resetTimer > 0 and self._divFill then
+                if self._autoCloseThread then
+                    task.cancel(self._autoCloseThread)
+                    self._autoCloseThread = nil
+                end
+                self._divFill.Size = UDim2.new(1, 0, 1, 0)
+                tw(self._divFill, {Size = UDim2.new(0, 0, 1, 0)}, TweenInfo.new(p.resetTimer, Enum.EasingStyle.Linear, Enum.EasingDirection.Out))
+                local autoThread = task.delay(p.resetTimer, function()
+                    if self._alive then fallClose() end
+                end)
+                self._autoCloseThread = autoThread
+            end
         end
-    end
 
-    function Notif:SetAccent(color)
-        if not self._alive then return end
-        local bar = self._card:FindFirstChild("AccentBar")
-        if bar then bar.BackgroundColor3 = color end
-        local db = self._card:FindFirstChild("DurationBar")
-        if db then
-            local fill = db:FindFirstChildOfClass("Frame")
-            if fill then fill.BackgroundColor3 = color end
+        function Notif:Flash(c)
+            if not self._alive then return end
+            local s = self._card:FindFirstChildOfClass("UIStroke")
+            if s then
+                local orig = s.Color
+                s.Color = c or Color3.new(1, 1, 1)
+                tw(s, {Color = orig}, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+            end
         end
-    end
 
-    function Notif:Shake()
-        if not self._alive then return end
-        local orig = self._card.Position
-        for _, ox in ipairs({8, -8, 6, -6, 3, -3, 0}) do
-            tw(self._card, {Position = UDim2.new(orig.X.Scale, orig.X.Offset + ox, orig.Y.Scale, orig.Y.Offset)}, TweenInfo.new(0.04, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
-            task.wait(0.045)
+        function Notif:SetBody(text, pulse)
+            if not self._alive then return end
+            self._msg.Text = text or ""
+            if pulse then
+                tw(self._msg, {TextTransparency = 0.6}, TI_FAST)
+                task.delay(0.15, function()
+                    if self._alive then tw(self._msg, {TextTransparency = 0}, TI_SLOW) end
+                end)
+            end
         end
-        self._card.Position = orig
-    end
 
-    return Notif
+        function Notif:SetAccent(color)
+            if not self._alive then return end
+            local bar = self._card:FindFirstChild("AccentBar")
+            if bar then bar.BackgroundColor3 = color end
+            local db = self._card:FindFirstChild("DurationBar")
+            if db then
+                local fill = db:FindFirstChildOfClass("Frame")
+                if fill then fill.BackgroundColor3 = color end
+            end
+        end
+
+        function Notif:Shake()
+            if not self._alive then return end
+            local orig = self._card.Position
+            for _, ox in ipairs({8, -8, 6, -6, 3, -3, 0}) do
+                tw(self._card, {Position = UDim2.new(orig.X.Scale, orig.X.Offset + ox, orig.Y.Scale, orig.Y.Offset)}, TweenInfo.new(0.04, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+                task.wait(0.045)
+            end
+            self._card.Position = orig
+        end
+
+        return Notif
+    end)
+    if not ok then
+        warn("[APTX:Notify] Error creando notificaci├│n: " .. tostring(result))
+        return nil
+    end
+    return result
 end
 
 APTX.Icons = Icons
