@@ -7,21 +7,26 @@ local Debris = game:GetService("Debris")
 local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
 
 local Theme = {
-    Background = Color3.fromRGB(12, 12, 12),
-    Surface = Color3.fromRGB(18, 18, 18),
-    Card = Color3.fromRGB(24, 24, 24),
-    CardHover = Color3.fromRGB(28, 28, 28),
-    Border = Color3.fromRGB(38, 38, 38),
-    BorderHover = Color3.fromRGB(55, 55, 55),
-    Accent = Color3.fromRGB(60, 180, 255),
-    Success = Color3.fromRGB(0, 200, 100),
-    Error = Color3.fromRGB(255, 80, 80),
-    TextPrimary = Color3.fromRGB(240, 240, 240),
-    TextSecondary = Color3.fromRGB(130, 130, 130),
-    TextDisabled = Color3.fromRGB(65, 65, 65),
-    SidebarActive = Color3.fromRGB(30, 30, 30),
-    TopBar = Color3.fromRGB(15, 15, 15),
-    Sidebar = Color3.fromRGB(15, 15, 15),
+    -- Xerion Design System — Monochrome / Silver
+    Background = Color3.fromRGB(0, 0, 0),           -- #000000
+    Surface = Color3.fromRGB(7, 7, 7),               -- #070707
+    Card = Color3.fromRGB(15, 15, 15),               -- #0f0f0f
+    CardHover = Color3.fromRGB(20, 20, 20),
+    Border = Color3.fromRGB(25, 25, 25),             -- rgba(192,192,192,0.10)
+    BorderHover = Color3.fromRGB(56, 56, 56),        -- rgba(255,255,255,0.22)
+    Accent = Color3.fromRGB(192, 192, 192),          -- Silver brand-mid #c0c0c0
+    Success = Color3.fromRGB(34, 197, 94),           -- #22c55e
+    Warning = Color3.fromRGB(245, 158, 11),          -- #f59e0b
+    Error = Color3.fromRGB(239, 68, 68),             -- #ef4444
+    TextPrimary = Color3.fromRGB(237, 237, 237),     -- rgba(255,255,255,0.93)
+    TextSecondary = Color3.fromRGB(128, 128, 128),   -- rgba(255,255,255,0.50)
+    TextDisabled = Color3.fromRGB(46, 46, 46),       -- rgba(255,255,255,0.18)
+    SidebarActive = Color3.fromRGB(10, 10, 10),
+    TopBar = Color3.fromRGB(5, 5, 5),
+    Sidebar = Color3.fromRGB(3, 3, 3),
+    BrandLo = Color3.fromRGB(85, 85, 85),            -- #555555
+    BrandMid = Color3.fromRGB(192, 192, 192),        -- #c0c0c0
+    BrandHi = Color3.fromRGB(242, 242, 242),         -- #f2f2f2
 }
 
 -- Weak table to register component references (avoids setting arbitrary properties on Roblox instances)
@@ -185,7 +190,7 @@ local function makeDraggable(handle, target)
     return {c1, c2, c3, c4}
 end
 
---- Card creation — returns card frame, border stroke, inner highlight stroke
+--- Card creation — Xerion-style: returns card frame, border stroke, and layout
 local function makeCard(parent)
     local c = newF({
         Name = "Card",
@@ -195,14 +200,19 @@ local function makeCard(parent)
     }, parent)
     newC(c, 10)
     c.Active = true
+
+    -- Outer border stroke (subtle silver)
     local borderStroke = newS(c, Theme.Border, 1)
 
-    local innerHL = Instance.new("UIStroke")
-    innerHL.Color = Color3.fromRGB(55, 55, 55)
-    innerHL.Thickness = 1
-    innerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Inner
-    innerHL.Transparency = 0.7
-    innerHL.Parent = c
+    -- Inner highlight stroke (Xerion signature: translucent silver inner glow)
+    do
+        local ih = Instance.new("UIStroke")
+        ih.Color = Theme.BrandLo
+        ih.Thickness = 1
+        ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Inner
+        ih.Transparency = 0.85
+        ih.Parent = c
+    end
 
     local layout = Instance.new("UIListLayout")
     layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -214,7 +224,7 @@ local function makeCard(parent)
     pad.PaddingLeft = UDim.new(0, 12)
     pad.PaddingRight = UDim.new(0, 12)
     pad.Parent = c
-    return c, borderStroke, layout, innerHL
+    return c, borderStroke, layout
 end
 
 local function initHover(comp, card, stroke)
@@ -250,12 +260,14 @@ local function initResponsive()
         local isMobile = screenSize.X < 600
         local scale
         if isMobile then
-            -- On mobile, occupy ~90% of screen width
-            scale = screenSize.X / 650
+            -- On mobile, occupy ~92% of screen width for better visibility
+            scale = screenSize.X / 630
+            -- Ensure minimum size is usable on very small screens
+            scale = math.max(scale, 0.45)
         else
             scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
         end
-        scale = clamp(scale, 0.30, 2.5)
+        scale = clamp(scale, 0.45, 2.5)
         APTX._scale = scale
         uiScale.Scale = scale
     end
@@ -317,20 +329,31 @@ function APTX:CreateGUI()
     newC(APTX.MainFrame, 12)
     newS(APTX.MainFrame, Theme.Border, 1)
 
+    -- Xerion ambient glow (top-center radial glow)
+    local ambientGlow = newF({
+        Name = "AmbientGlow",
+        Size = UDim2.new(1, 0, 0, 200),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(192, 192, 192),
+        BackgroundTransparency = 0.97,
+        BorderSizePixel = 0,
+    }, APTX.MainFrame)
+
     local mfW, mfH = 580, 400
     local function syncShadow(s)
         s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
     end
 
-    local s1 = makeShadow(mfW, mfH, 1, 0.85)
+    -- Xerion multi-layered shadows (more dramatic)
+    local s1 = makeShadow(mfW, mfH, 1, 0.82)
     newC(s1, 14)
     s1.Parent = APTX.GUI
     syncShadow(s1)
-    local s2 = makeShadow(mfW, mfH, 2, 0.92)
+    local s2 = makeShadow(mfW, mfH, 2, 0.90)
     newC(s2, 16)
     s2.Parent = APTX.GUI
     syncShadow(s2)
-    local s3 = makeShadow(mfW, mfH, 3, 0.96)
+    local s3 = makeShadow(mfW, mfH, 3, 0.95)
     newC(s3, 18)
     s3.Parent = APTX.GUI
     syncShadow(s3)
@@ -366,6 +389,7 @@ function APTX:CreateGUI()
 end
 
 function APTX:CreateTopBar()
+    -- Xerion Navigation Bar — pure black, subtle border, silver typography
     local topBar = newF({
         Name = "TopBar",
         Size = UDim2.new(1, 0, 0, 44),
@@ -381,8 +405,9 @@ function APTX:CreateTopBar()
     }, topBar)
     newS(topBar, Theme.Border, 1)
 
+    -- Title with Xerion silver aesthetic
     local titleContainer = newF({
-        Size = UDim2.new(0, 200, 1, 0),
+        Size = UDim2.new(0, 240, 1, 0),
         Position = UDim2.new(0, 12, 0, 0),
         BackgroundTransparency = 1,
     }, topBar)
@@ -393,7 +418,7 @@ function APTX:CreateTopBar()
         Position = UDim2.new(0, 0, 0, 4),
         BackgroundTransparency = 1,
         Text = APTX.Title,
-        TextColor3 = Theme.TextPrimary,
+        TextColor3 = Theme.BrandMid,
         Font = Enum.Font.GothamBold,
         TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -404,13 +429,14 @@ function APTX:CreateTopBar()
         Size = UDim2.new(1, 0, 0, 14),
         Position = UDim2.new(0, 0, 0, 24),
         BackgroundTransparency = 1,
-        Text = "by DrexusTeam",
-        TextColor3 = Theme.TextSecondary,
-        Font = Enum.Font.Gotham,
-        TextSize = 11,
+        Text = "// XERION DESIGN",
+        TextColor3 = Theme.BrandLo,
+        Font = Enum.Font.Code,
+        TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
     }, titleContainer)
 
+    -- Window controls — Xerion style: subtle silver on hover
     local btnFrame = newF({
         Name = "WindowControls",
         Size = UDim2.new(0, 108, 0, 28),
@@ -418,10 +444,11 @@ function APTX:CreateTopBar()
         BackgroundTransparency = 1,
     }, topBar)
 
+    -- Close button (Xerion red accent)
     local closeBtn = newB({
         Size = UDim2.new(0, 28, 0, 28),
         Position = UDim2.new(0, 80, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
@@ -431,26 +458,27 @@ function APTX:CreateTopBar()
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Text = "✕",
-        TextColor3 = Theme.TextSecondary,
+        TextColor3 = Color3.fromRGB(80, 80, 80),
         Font = Enum.Font.Gotham,
         TextSize = 12,
     }, closeBtn)
     closeBtn.MouseEnter:Connect(function()
-        tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(255, 90, 90)}, TI_HOVER)
+        tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
         tw(closeX, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
     end)
     closeBtn.MouseLeave:Connect(function()
-        tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, TI_HOVER)
-        tw(closeX, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
+        tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
+        tw(closeX, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
     closeBtn.MouseButton1Click:Connect(function()
         APTX:ToggleVisibility()
     end)
 
+    -- Maximize button (Xerion silver success)
     local maxBtn = newB({
         Size = UDim2.new(0, 28, 0, 28),
         Position = UDim2.new(0, 42, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
@@ -460,23 +488,24 @@ function APTX:CreateTopBar()
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Text = "□",
-        TextColor3 = Theme.TextSecondary,
+        TextColor3 = Color3.fromRGB(80, 80, 80),
         Font = Enum.Font.Gotham,
         TextSize = 10,
     }, maxBtn)
     maxBtn.MouseEnter:Connect(function()
-        tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(50, 200, 100)}, TI_HOVER)
+        tw(maxBtn, {BackgroundColor3 = Theme.Success}, TI_HOVER)
         tw(maxBox, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
     end)
     maxBtn.MouseLeave:Connect(function()
-        tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, TI_HOVER)
-        tw(maxBox, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
+        tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
+        tw(maxBox, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
 
+    -- Minimize button (Xerion silver warning)
     local minBtn = newB({
         Size = UDim2.new(0, 28, 0, 28),
         Position = UDim2.new(0, 4, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
@@ -486,17 +515,17 @@ function APTX:CreateTopBar()
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Text = "—",
-        TextColor3 = Theme.TextSecondary,
+        TextColor3 = Color3.fromRGB(80, 80, 80),
         Font = Enum.Font.Gotham,
         TextSize = 10,
     }, minBtn)
     minBtn.MouseEnter:Connect(function()
-        tw(minBtn, {BackgroundColor3 = Color3.fromRGB(255, 190, 50)}, TI_HOVER)
+        tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
         tw(minLine, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
     end)
     minBtn.MouseLeave:Connect(function()
-        tw(minBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, TI_HOVER)
-        tw(minLine, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
+        tw(minBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
+        tw(minLine, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
 
     APTX.TopBar = topBar
@@ -510,6 +539,7 @@ function APTX:CreateSidebar(parent)
         BorderSizePixel = 0,
     }, parent)
     newC(sidebar, 12)
+    -- Xerion-style right divider: subtle silver line
     local rightBorder = newF({
         Size = UDim2.new(0, 1, 1, 0),
         Position = UDim2.new(1, -1, 0, 0),
@@ -530,9 +560,11 @@ function APTX:CreateSidebar(parent)
     scrolling.Size = UDim2.new(1, 0, 1, 0)
     scrolling.BackgroundTransparency = 1
     scrolling.BorderSizePixel = 0
-    scrolling.ScrollBarThickness = 2
-    scrolling.ScrollBarImageColor3 = Theme.Border
+    scrolling.ScrollBarThickness = 3
+    scrolling.ScrollBarImageColor3 = Theme.BrandLo
     scrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scrolling.ScrollBarImageTransparency = 0.6
+    scrolling.ElasticBehavior = Enum.ElasticBehavior.Always
     scrolling.Parent = sectionList
 
     local layout = Instance.new("UIListLayout")
@@ -573,24 +605,27 @@ function APTX:CreateHideButton()
         Name = "HideButton",
         Size = UDim2.new(0, 40, 0, 40),
         Position = UDim2.new(0, 12, 0, 12),
-        BackgroundColor3 = Theme.Card,
+        BackgroundColor3 = Color3.fromRGB(10, 10, 10),
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
     }, APTX.GUI)
     newC(hideBtn, 10)
     newS(hideBtn, Theme.Border, 1)
-    newI("menu", 20, hideBtn)
+    local hideIcon = newI("menu", 20, hideBtn)
+    hideIcon.ImageColor3 = Theme.BrandLo
 
     local function onEnter()
         tw(hideBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
         local s = hideBtn:FindFirstChildOfClass("UIStroke")
         if s then tw(s, {Color = Theme.BorderHover}, TI_HOVER) end
+        tw(hideIcon, {ImageColor3 = Theme.BrandMid}, TI_HOVER)
     end
     local function onLeave()
-        tw(hideBtn, {BackgroundColor3 = Theme.Card}, TI_HOVER)
+        tw(hideBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
         local s = hideBtn:FindFirstChildOfClass("UIStroke")
         if s then tw(s, {Color = Theme.Border}, TI_HOVER) end
+        tw(hideIcon, {ImageColor3 = Theme.BrandLo}, TI_HOVER)
     end
 
     hideBtn.MouseEnter:Connect(onEnter)
@@ -706,6 +741,10 @@ local function initComponent(comp, frame, sectionRef)
         self._disabled = true
         if self._frame then
             self._overlay = makeOverlay(self._frame)
+            -- Disable scrolling on ScrollingFrame to prevent bypass
+            if self._frame:IsA("ScrollingFrame") then
+                self._frame.ScrollingEnabled = false
+            end
         end
     end
 
@@ -715,6 +754,10 @@ local function initComponent(comp, frame, sectionRef)
         if self._overlay then
             self._overlay:Destroy()
             self._overlay = nil
+            -- Re-enable scrolling
+            if self._frame:IsA("ScrollingFrame") then
+                self._frame.ScrollingEnabled = true
+            end
         end
     end
 
@@ -902,27 +945,32 @@ local function animateSectionEntry(container)
                 end
             end)
         elseif card:IsA("Frame") then
-            -- Cards & separator Frames: fade background
+            -- Cards, Toggle tracks, separator Frames: fade background
             card.BackgroundTransparency = 1
             task.delay(stagger, function()
                 local ok, err = pcall(function()
                     if not card or not card.Parent or card.Parent ~= container then return end
                     tw(card, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
                     -- Fade in text/image children
-                    for _, lbl in ipairs(card:GetChildren()) do
-                        if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
-                            lbl.TextTransparency = 1
-                            tw(lbl, {TextTransparency = 0}, TI_ENTRY_FADE)
-                        elseif lbl:IsA("ImageLabel") then
-                            lbl.ImageTransparency = 1
-                            tw(lbl, {ImageTransparency = 0}, TI_ENTRY_FADE)
-                        elseif lbl:IsA("UIStroke") then
-                            local origTransparency = lbl.Transparency
-                            lbl.Transparency = 1
-                            tw(lbl, {Transparency = origTransparency}, TI_ENTRY_FADE)
-                        elseif lbl:IsA("Frame") and lbl.Name ~= "Icon" then
-                            lbl.BackgroundTransparency = 1
-                            tw(lbl, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                    for _, child in ipairs(card:GetChildren()) do
+                        if child:IsA("TextLabel") then
+                            child.TextTransparency = 1
+                            tw(child, {TextTransparency = 0}, TI_ENTRY_FADE)
+                        elseif child:IsA("TextButton") then
+                            -- TextButton: fade both text and background (Toggle tracks, Menu options, etc.)
+                            child.TextTransparency = 1
+                            child.BackgroundTransparency = 1
+                            tw(child, {TextTransparency = 0, BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                        elseif child:IsA("ImageLabel") then
+                            child.ImageTransparency = 1
+                            tw(child, {ImageTransparency = 0}, TI_ENTRY_FADE)
+                        elseif child:IsA("UIStroke") then
+                            local origTransparency = child.Transparency
+                            child.Transparency = 1
+                            tw(child, {Transparency = origTransparency}, TI_ENTRY_FADE)
+                        elseif child:IsA("Frame") and child.Name ~= "Icon" then
+                            child.BackgroundTransparency = 1
+                            tw(child, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
                         end
                     end
                 end)
@@ -962,6 +1010,7 @@ function APTX:Section(text, icon, default)
         }, APTX.SectionList)
         newC(section.Button, 8)
 
+        -- Xerion silver accent bar (left border indicator)
         local accentBar = newF({
             Name = "AccentBar",
             Size = UDim2.new(0, 3, 1, 0),
@@ -983,6 +1032,7 @@ function APTX:Section(text, icon, default)
             iconLabel.Position = UDim2.new(0, 0, 0.5, -8)
         end
 
+        -- Xerion label — silver muted by default, bright on active
         local label = newL({
             Name = "Label",
             Size = UDim2.new(1, icon and -24 or 0, 1, 0),
@@ -1002,6 +1052,8 @@ function APTX:Section(text, icon, default)
         section.Container.BorderSizePixel = 0
         section.Container.ScrollBarThickness = 3
         section.Container.ScrollBarImageColor3 = Theme.Border
+        section.Container.ScrollBarImageTransparency = 0.5
+        section.Container.ElasticBehavior = Enum.ElasticBehavior.Always
         section.Container.Visible = false
         section.Container.CanvasSize = UDim2.new(0, 0, 0, 0)
         section.Container.Parent = APTX.ContentArea
@@ -1146,14 +1198,18 @@ function APTX:SelectSection(name)
                 animateSectionEntry(section.Container)
             end
 
+            -- Xerion active state: dark active bg + silver accent bar + bright text
             section.Button.BackgroundColor3 = Theme.SidebarActive
             section.Button.BackgroundTransparency = 0
             local bar = section.Button:FindFirstChild("AccentBar")
-            if bar then tw(bar, {BackgroundTransparency = 0}, TI_MED) end
+            if bar then
+                tw(bar, {BackgroundTransparency = 0}, TI_MED)
+                bar.BackgroundColor3 = Theme.BrandMid
+            end
             local iconImg = section.Button:FindFirstChild("Icon", true)
-            if iconImg then iconImg.ImageColor3 = Theme.Accent end
+            if iconImg then iconImg.ImageColor3 = Theme.BrandMid end
             local lbl2 = section.Button:FindFirstChild("Label", true)
-            if lbl2 then lbl2.TextColor3 = Theme.TextPrimary end
+            if lbl2 then lbl2.TextColor3 = Theme.BrandHi end
             APTX.CurrentSection = name
         else
             -- Hide inactive sections immediately (no delay)
@@ -1161,7 +1217,10 @@ function APTX:SelectSection(name)
 
             section.Button.BackgroundTransparency = 1
             local bar = section.Button:FindFirstChild("AccentBar")
-            if bar then tw(bar, {BackgroundTransparency = 1}, TI_MED) end
+            if bar then
+                tw(bar, {BackgroundTransparency = 1}, TI_MED)
+                bar.BackgroundColor3 = Theme.Accent
+            end
             local iconImg = section.Button:FindFirstChild("Icon", true)
             if iconImg then iconImg.ImageColor3 = Theme.TextSecondary end
             local lbl2 = section.Button:FindFirstChild("Label", true)
@@ -1235,7 +1294,7 @@ function APTX:Button(sectionName, text, icon, callback)
             end
             comp._tweens = {}
 
-            local ts = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Theme.Accent})
+            local ts = TweenService:Create(card, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Theme.BrandLo})
             ts:Play()
             table.insert(comp._tweens, ts)
             local tsConn = ts.Completed:Connect(function()
@@ -1322,18 +1381,21 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             Name = "Track",
             Size = UDim2.new(0, 44, 0, 24),
             Position = UDim2.new(1, -44, 0.5, -12),
-            BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+            BackgroundColor3 = Color3.fromRGB(30, 30, 30),
             Text = "",
             BorderSizePixel = 0,
             AutoButtonColor = false,
         }, card)
         newC(track, 12)
+        -- Xerion silver border on track
+        local trackStroke = newS(track, Theme.Border, 1)
+        trackStroke.Transparency = 0.5
 
         local knob = newF({
             Name = "Knob",
             Size = UDim2.new(0, 20, 0, 20),
             Position = UDim2.new(0, 2, 0.5, -10),
-            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundColor3 = Color3.fromRGB(60, 60, 60),
             BorderSizePixel = 0,
         }, track)
         newC(knob, 10)
@@ -1347,13 +1409,17 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         local function setToggleState(state, instant)
             isOn = state
             local kPos = isOn and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-            local tColor = isOn and Theme.Success or Color3.fromRGB(40, 40, 40)
+            -- Xerion silver toggle: white when on, dark when off
+            local tColor = isOn and Color3.fromRGB(192, 192, 192) or Color3.fromRGB(30, 30, 30)
+            local kColor = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(60, 60, 60)
             if instant then
                 knob.Position = kPos
                 track.BackgroundColor3 = tColor
+                knob.BackgroundColor3 = kColor
             else
                 tw(knob, {Position = kPos}, TI_MED)
                 tw(track, {BackgroundColor3 = tColor}, TI_MED)
+                tw(knob, {BackgroundColor3 = kColor}, TI_MED)
             end
         end
 
@@ -1479,16 +1545,19 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             Name = "Track",
             Size = UDim2.new(1, 0, 0, 6),
             Position = UDim2.new(0, 0, 1, -6),
-            BackgroundColor3 = Color3.fromRGB(38, 38, 38),
+            BackgroundColor3 = Color3.fromRGB(18, 18, 18),
             BorderSizePixel = 0,
             Active = true,
         }, card)
         newC(track, 3)
+        -- Xerion silver border on track
+        local trackBorder = newS(track, Theme.Border, 1)
+        trackBorder.Transparency = 0.7
 
         local fill = newF({
             Name = "Fill",
             Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
-            BackgroundColor3 = Theme.Accent,
+            BackgroundColor3 = Theme.BrandMid,
             BorderSizePixel = 0,
         }, track)
         newC(fill, 3)
@@ -1497,10 +1566,13 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             Name = "Knob",
             Size = UDim2.new(0, 18, 0, 18),
             Position = UDim2.new((value - min) / (max - min), -9, 0.5, -9),
-            BackgroundColor3 = Color3.new(1, 1, 1),
+            BackgroundColor3 = Color3.fromRGB(220, 220, 220),
             BorderSizePixel = 0,
         }, track)
         newC(knob, 9)
+        -- Xerion silver border on knob
+        local knobBorder = newS(knob, Color3.fromRGB(255, 255, 255), 1)
+        knobBorder.Transparency = 0.6
 
         local comp = {}
         local cb = callback
@@ -1720,7 +1792,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                     Position = UDim2.new(0, 0, 0, 0),
                     BackgroundTransparency = 1,
                     Text = opt,
-                    TextColor3 = opt == selected and Theme.Accent or Theme.TextSecondary,
+                    TextColor3 = opt == selected and Theme.BrandMid or Theme.TextSecondary,
                     Font = Enum.Font.Gotham,
                     TextSize = 12,
                     TextXAlignment = Enum.TextXAlignment.Left,
@@ -1732,7 +1804,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                     Position = UDim2.new(1, -24, 0.5, -8),
                     BackgroundTransparency = 1,
                     Text = opt == selected and "✓" or "",
-                    TextColor3 = Theme.Accent,
+                    TextColor3 = Theme.BrandMid,
                     Font = Enum.Font.GothamBold,
                     TextSize = 12,
                 }, ob)
@@ -1868,7 +1940,7 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         inputBox.Name = "InputBox"
         inputBox.Size = UDim2.new(1, 0, 0, 26)
         inputBox.Position = UDim2.new(0, 0, 1, -26)
-        inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        inputBox.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
         inputBox.BorderSizePixel = 0
         inputBox.PlaceholderText = placeholder or ""
         inputBox.PlaceholderColor3 = Theme.TextDisabled
@@ -1893,11 +1965,13 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         initHover(comp, card, stroke)
 
         inputBox.Focused:Connect(function()
-            tw(inputStroke, {Color = Theme.Accent}, TI_HOVER)
+            tw(inputStroke, {Color = Theme.BrandMid}, TI_HOVER)
+            tw(inputBox, {BackgroundColor3 = Color3.fromRGB(15, 15, 15)}, TI_HOVER)
         end)
 
         inputBox.FocusLost:Connect(function(enterPressed)
             tw(inputStroke, {Color = Theme.Border}, TI_HOVER)
+            tw(inputBox, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
             if comp._disabled then return end
             if enterPressed and cb then
                 cb(inputBox.Text)
@@ -1953,9 +2027,9 @@ function APTX:Label(sectionName, text)
                 Size = UDim2.new(1, 0, 0, 20),
                 BackgroundTransparency = 1,
                 Text = text,
-                TextColor3 = Theme.TextSecondary,
+                TextColor3 = Theme.BrandMid,
                 Font = Enum.Font.GothamBold,
-                TextSize = 15,
+                TextSize = 14,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 TextWrapped = true,
             }, section.Container)
@@ -2078,10 +2152,11 @@ function APTX:Notify(params)
         local CARD_H = sTOPBAR + sBODY + (hasBtns and (sBTN_H + 8) or 8) + 2
 
         local accentColors = {
-            info = Theme.Accent,
+            info = Color3.fromRGB(192, 192, 192),
             success = Theme.Success,
             error = Theme.Error,
-            neutral = Theme.Accent,
+            neutral = Color3.fromRGB(192, 192, 192),
+            warning = Theme.Warning,
         }
 
         assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
@@ -2093,13 +2168,20 @@ function APTX:Notify(params)
             Name = "NotifCard_" .. notifCounter,
             Size = UDim2.new(0, sW, 0, CARD_H),
             Position = UDim2.new(1, sW + 20, 1, -CARD_H),
-            BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            BackgroundColor3 = Color3.fromRGB(7, 7, 7),
             BorderSizePixel = 0,
             ClipsDescendants = true,
             ZIndex = NOTIF_Z_BASE,
         }, gui)
         newC(Card, 12)
         local cardStroke = newS(Card, Theme.Border, 1)
+        -- Xerion inner glow
+        local notifInnerHL = Instance.new("UIStroke")
+        notifInnerHL.Color = Theme.BrandLo
+        notifInnerHL.Thickness = 1
+        notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Inner
+        notifInnerHL.Transparency = 0.85
+        notifInnerHL.Parent = Card
 
         local accentBar = newF({
             Name = "AccentBar",
