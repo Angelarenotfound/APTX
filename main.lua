@@ -192,39 +192,38 @@ end
 
 --- Card creation — Xerion-style: returns card frame, border stroke, and layout
 local function makeCard(parent)
-    local c = newF({
-        Name = "Card",
-        Size = UDim2.new(1, 0, 0, 44),
-        BackgroundColor3 = Theme.Card,
-        BorderSizePixel = 0,
-    }, parent)
-    newC(c, 10)
-    c.Active = true
+local c = newF({
+Name = "Card",
+Size = UDim2.new(1, 0, 0, 44),
+BackgroundColor3 = Theme.Card,
+BorderSizePixel = 0,
+}, parent)
+newC(c, 10)
+c.Active = true
+-- Outer border stroke (subtle silver)
+local borderStroke = newS(c, Theme.Border, 1)
 
-    -- Outer border stroke (subtle silver)
-    local borderStroke = newS(c, Theme.Border, 1)
+-- Inner highlight stroke (Xerion signature: translucent silver inner glow)
+do
+    local ih = Instance.new("UIStroke")
+    ih.Color = Theme.BrandLo
+    ih.Thickness = 1
+    ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    ih.Transparency = 0.85
+    ih.Parent = c
+end
 
-    -- Inner highlight stroke (Xerion signature: translucent silver inner glow)
-    do
-        local ih = Instance.new("UIStroke")
-        ih.Color = Theme.BrandLo
-        ih.Thickness = 1
-        ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Inner
-        ih.Transparency = 0.85
-        ih.Parent = c
-    end
-
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 8)
-    layout.Parent = c
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 12)
-    pad.PaddingRight = UDim.new(0, 12)
-    pad.Parent = c
-    return c, borderStroke, layout
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.FillDirection = Enum.FillDirection.Horizontal
+layout.VerticalAlignment = Enum.VerticalAlignment.Center
+layout.Padding = UDim.new(0, 8)
+layout.Parent = c
+local pad = Instance.new("UIPadding")
+pad.PaddingLeft = UDim.new(0, 12)
+pad.PaddingRight = UDim.new(0, 12)
+pad.Parent = c
+return c, borderStroke, layout
 end
 
 local function initHover(comp, card, stroke)
@@ -244,40 +243,42 @@ end
 
 --- Initialize the UIScale system for responsive design
 local function initResponsive()
+if not APTX.GUI then return end
+-- Remove existing UIScale if any
+local existing = APTX.GUI:FindFirstChildOfClass("UIScale")
+if existing then existing:Destroy() end
+
+local uiScale = Instance.new("UIScale")
+uiScale.Name = "APTXScale"
+uiScale.Parent = APTX.GUI
+
+local function updateScale()
     if not APTX.GUI then return end
-
-    -- Remove existing UIScale if any
-    local existing = APTX.GUI:FindFirstChildOfClass("UIScale")
-    if existing then existing:Destroy() end
-
-    local uiScale = Instance.new("UIScale")
-    uiScale.Name = "APTXScale"
-    uiScale.Parent = APTX.GUI
-
-    local function updateScale()
-        if not APTX.GUI then return end
-        local screenSize = APTX.GUI.AbsoluteSize
-        local isMobile = screenSize.X < 600
-        local scale
-        if isMobile then
-            -- On mobile, occupy ~92% of screen width for better visibility
-            scale = screenSize.X / 630
-            -- Ensure minimum size is usable on very small screens
-            scale = math.max(scale, 0.45)
-        else
-            scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
-        end
-        scale = clamp(scale, 0.45, 2.5)
-        APTX._scale = scale
-        uiScale.Scale = scale
+    local screenSize = APTX.GUI.AbsoluteSize
+    local isMobile = screenSize.X < 768
+    local scale
+    if isMobile then
+        -- On mobile, occupy ~95% of screen width for better visibility
+        scale = screenSize.X / 580
+        -- Also consider height to avoid overflow
+        local heightScale = screenSize.Y / 400
+        scale = math.min(scale, heightScale)
+        -- Ensure minimum size is usable on very small screens
+        scale = math.max(scale, 0.8)
+    else
+        scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
     end
+    scale = clamp(scale, 0.8, 2.5)
+    APTX._scale = scale
+    uiScale.Scale = scale
+end
 
-    -- Connect to size changes
-    local sizeConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale)
-    table.insert(APTX._connections, sizeConn)
+-- Connect to size changes
+local sizeConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale)
+table.insert(APTX._connections, sizeConn)
 
-    -- Initial call sets the scale immediately
-    updateScale()
+-- Initial call sets the scale immediately
+updateScale()
 end
 
 --- Public API
@@ -294,98 +295,101 @@ function APTX:Config(title, draggable, devmode)
 end
 
 function APTX:CreateGUI()
-    -- Clean up old connections before re-initializing
-    for _, conn in ipairs(APTX._connections) do
-        conn:Disconnect()
+-- Clean up old connections before re-initializing
+for _, conn in ipairs(APTX._connections) do
+conn:Disconnect()
+end
+APTX._connections = {}
+local player = Players.LocalPlayer
+if not player then
+    player = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+end
+local playerGui = player:WaitForChild("PlayerGui")
+
+if playerGui:FindFirstChild("APTXGui") then
+    playerGui.APTXGui:Destroy()
+end
+
+APTX.GUI = Instance.new("ScreenGui")
+APTX.GUI.Name = "APTXGui"
+APTX.GUI.ResetOnSpawn = false
+APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+APTX.GUI.Parent = playerGui
+
+-- Responsive scaling
+initResponsive()
+
+-- Detect mobile and adjust MainFrame size
+local isMobile = APTX.GUI.AbsoluteSize.X < 768
+local mfW = isMobile and math.min(580, APTX.GUI.AbsoluteSize.X - 16) or 580
+local mfH = isMobile and math.min(400, APTX.GUI.AbsoluteSize.Y - 16) or 400
+
+APTX.MainFrame = newF({
+     Name = "MainFrame",
+    Size = UDim2.new(0, mfW, 0, mfH),
+    Position = UDim2.new(0.5, -mfW/2, 0.5, -mfH/2),
+    BackgroundColor3 = Theme.Background,
+    BorderSizePixel = 0,
+}, APTX.GUI)
+newC(APTX.MainFrame, 12)
+newS(APTX.MainFrame, Theme.Border, 1)
+
+-- Xerion ambient glow (top-center radial glow)
+local ambientGlow = newF({
+    Name = "AmbientGlow",
+    Size = UDim2.new(1, 0, 0, 200),
+    Position = UDim2.new(0, 0, 0, 0),
+    BackgroundColor3 = Color3.fromRGB(192, 192, 192),
+    BackgroundTransparency = 0.97,
+    BorderSizePixel = 0,
+}, APTX.MainFrame)
+
+local function syncShadow(s)
+    s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
+end
+
+-- Xerion multi-layered shadows (more dramatic)
+local s1 = makeShadow(mfW, mfH, 1, 0.82)
+newC(s1, 14)
+s1.Parent = APTX.GUI
+syncShadow(s1)
+local s2 = makeShadow(mfW, mfH, 2, 0.90)
+newC(s2, 16)
+s2.Parent = APTX.GUI
+syncShadow(s2)
+local s3 = makeShadow(mfW, mfH, 3, 0.95)
+newC(s3, 18)
+s3.Parent = APTX.GUI
+syncShadow(s3)
+APTX.Shadow1 = s1
+APTX.Shadow2 = s2
+APTX.Shadow3 = s3
+
+for _, s in ipairs({s1, s2, s3}) do
+    local sync = APTX.MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
+        syncShadow(s)
+    end)
+    table.insert(APTX._connections, sync)
+end
+
+APTX:CreateTopBar()
+
+local container = newF({
+    Name = "Container",
+    Size = UDim2.new(1, 0, 1, -44),
+    Position = UDim2.new(0, 0, 0, 44),
+    BackgroundTransparency = 1,
+}, APTX.MainFrame)
+
+APTX:CreateSidebar(container)
+APTX:CreateContentArea(container)
+
+if APTX.Draggable then
+    local dragConns = makeDraggable(APTX.TopBar, APTX.MainFrame)
+    for _, conn in ipairs(dragConns) do
+        table.insert(APTX._connections, conn)
     end
-    APTX._connections = {}
-
-    local player = Players.LocalPlayer
-    if not player then
-        player = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-    end
-    local playerGui = player:WaitForChild("PlayerGui")
-
-    if playerGui:FindFirstChild("APTXGui") then
-        playerGui.APTXGui:Destroy()
-    end
-
-    APTX.GUI = Instance.new("ScreenGui")
-    APTX.GUI.Name = "APTXGui"
-    APTX.GUI.ResetOnSpawn = false
-    APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    APTX.GUI.Parent = playerGui
-
-    -- Responsive scaling
-    initResponsive()
-
-    APTX.MainFrame = newF({
-        Name = "MainFrame",
-        Size = UDim2.new(0, 580, 0, 400),
-        Position = UDim2.new(0.5, -290, 0.5, -200),
-        BackgroundColor3 = Theme.Background,
-        BorderSizePixel = 0,
-    }, APTX.GUI)
-    newC(APTX.MainFrame, 12)
-    newS(APTX.MainFrame, Theme.Border, 1)
-
-    -- Xerion ambient glow (top-center radial glow)
-    local ambientGlow = newF({
-        Name = "AmbientGlow",
-        Size = UDim2.new(1, 0, 0, 200),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(192, 192, 192),
-        BackgroundTransparency = 0.97,
-        BorderSizePixel = 0,
-    }, APTX.MainFrame)
-
-    local mfW, mfH = 580, 400
-    local function syncShadow(s)
-        s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
-    end
-
-    -- Xerion multi-layered shadows (more dramatic)
-    local s1 = makeShadow(mfW, mfH, 1, 0.82)
-    newC(s1, 14)
-    s1.Parent = APTX.GUI
-    syncShadow(s1)
-    local s2 = makeShadow(mfW, mfH, 2, 0.90)
-    newC(s2, 16)
-    s2.Parent = APTX.GUI
-    syncShadow(s2)
-    local s3 = makeShadow(mfW, mfH, 3, 0.95)
-    newC(s3, 18)
-    s3.Parent = APTX.GUI
-    syncShadow(s3)
-    APTX.Shadow1 = s1
-    APTX.Shadow2 = s2
-    APTX.Shadow3 = s3
-
-    for _, s in ipairs({s1, s2, s3}) do
-        local sync = APTX.MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-            syncShadow(s)
-        end)
-        table.insert(APTX._connections, sync)
-    end
-
-    APTX:CreateTopBar()
-
-    local container = newF({
-        Name = "Container",
-        Size = UDim2.new(1, 0, 1, -44),
-        Position = UDim2.new(0, 0, 0, 44),
-        BackgroundTransparency = 1,
-    }, APTX.MainFrame)
-
-    APTX:CreateSidebar(container)
-    APTX:CreateContentArea(container)
-
-    if APTX.Draggable then
-        local dragConns = makeDraggable(APTX.TopBar, APTX.MainFrame)
-        for _, conn in ipairs(dragConns) do
-            table.insert(APTX._connections, conn)
-        end
-    end
+end
 end
 
 function APTX:CreateTopBar()
@@ -2165,23 +2169,23 @@ function APTX:Notify(params)
         notifCounter = notifCounter + 1
 
         local Card = newF({
-            Name = "NotifCard_" .. notifCounter,
-            Size = UDim2.new(0, sW, 0, CARD_H),
-            Position = UDim2.new(1, sW + 20, 1, -CARD_H),
-            BackgroundColor3 = Color3.fromRGB(7, 7, 7),
-            BorderSizePixel = 0,
-            ClipsDescendants = true,
-            ZIndex = NOTIF_Z_BASE,
-        }, gui)
-        newC(Card, 12)
-        local cardStroke = newS(Card, Theme.Border, 1)
-        -- Xerion inner glow
-        local notifInnerHL = Instance.new("UIStroke")
-        notifInnerHL.Color = Theme.BrandLo
-        notifInnerHL.Thickness = 1
-        notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Inner
-        notifInnerHL.Transparency = 0.85
-        notifInnerHL.Parent = Card
+        Name = "NotifCard_" .. notifCounter,
+        Size = UDim2.new(0, sW, 0, CARD_H),
+        Position = UDim2.new(1, sW + 20, 1, -CARD_H),
+        BackgroundColor3 = Color3.fromRGB(7, 7, 7),
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = NOTIF_Z_BASE,
+    }, gui)
+    newC(Card, 12)
+    local cardStroke = newS(Card, Theme.Border, 1)
+    -- Xerion inner glow
+    local notifInnerHL = Instance.new("UIStroke")
+    notifInnerHL.Color = Theme.BrandLo
+    notifInnerHL.Thickness = 1
+    notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    notifInnerHL.Transparency = 0.85
+    notifInnerHL.Parent = Card
 
         local accentBar = newF({
             Name = "AccentBar",
