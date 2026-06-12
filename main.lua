@@ -85,6 +85,25 @@ local function log(...)
     end
 end
 
+-- Safe no-op proxy returned when a component fails to create.
+-- Prevents "attempt to index nil with 'Edit'/'Disable'/etc." errors in user scripts
+-- that call methods on the returned component without checking for nil.
+local function makeNilProxy(tag)
+    local proxy = {}
+    local mt = {
+        __index = function(_, key)
+            return function(...)
+                if APTX.DevMode then
+                    warn("[APTX] Called '" .. tostring(key) .. "' on a failed component (" .. tostring(tag) .. "). Check earlier warnings.")
+                end
+            end
+        end,
+        __newindex = function() end,
+    }
+    setmetatable(proxy, mt)
+    return proxy
+end
+
 local function tw(obj, props, info)
     local t = TweenService:Create(obj, info or TI_MED, props)
     t:Play()
@@ -739,7 +758,7 @@ function APTX:Destroy()
 
     -- Cancel any pending section hide delays
     for _, threadId in pairs(APTX._sectionHideDelays) do
-        task.cancel(threadId)
+        pcall(task.cancel, threadId)
     end
     APTX._sectionHideDelays = {}
 
@@ -986,7 +1005,8 @@ local function animEntry(container)
     -- Collect all non-layout children
     local cards = {}
     for _, child in ipairs(container:GetChildren()) do
-        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
+        if not child:IsA("UIListLayout") and not child:IsA("UIPadding")
+            and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
             table.insert(cards, child)
         end
     end
@@ -995,53 +1015,68 @@ local function animEntry(container)
         local stagger = (idx - 1) * 0.04
 
         if card:IsA("TextLabel") then
-            -- Labels: only fade text, not background
+            -- Labels: only fade text, never touch background
             card.TextTransparency = 1
             task.delay(stagger, function()
                 local ok, err = pcall(function()
                     if not card or not card.Parent or card.Parent ~= container then return end
                     tw(card, {TextTransparency = 0}, TI_ENTRY_FADE)
                 end)
-                if not ok and APTX.DevMode then
-                    warn("[APTX] animEntry error:", err)
-                end
+                if not ok and APTX.DevMode then warn("[APTX] animEntry error:", err) end
             end)
+
         elseif card:IsA("Frame") then
-            -- Cards, Toggle tracks, separator Frames: fade background
+            -- Top-level card frames: snapshot original transparency and fade in from invisible
+            local origBGT = card.BackgroundTransparency
             card.BackgroundTransparency = 1
             task.delay(stagger, function()
                 local ok, err = pcall(function()
                     if not card or not card.Parent or card.Parent ~= container then return end
-                    tw(card, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
-                    -- Fade in text/image children
+                    tw(card, {BackgroundTransparency = origBGT}, TI_ENTRY_FADE)
+
                     for _, child in ipairs(card:GetChildren()) do
                         if child:IsA("TextLabel") then
                             child.TextTransparency = 1
                             tw(child, {TextTransparency = 0}, TI_ENTRY_FADE)
+
                         elseif child:IsA("TextButton") then
-                            -- TextButton: fade both text and background (Toggle tracks, Menu options, etc.)
+                            -- IMPORTANT: only animate text, never override BackgroundTransparency.
+                            -- Many buttons (dropBtn, overlayBtn) are intentionally fully transparent (=1).
+                            -- Fading their background to 0 makes them render as white opaque blocks.
                             child.TextTransparency = 1
-                            child.BackgroundTransparency = 1
-                            tw(child, {TextTransparency = 0, BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                            tw(child, {TextTransparency = 0}, TI_ENTRY_FADE)
+                            -- Only fade background if it was already meant to be visible (< 0.9)
+                            if child.BackgroundTransparency < 0.9 then
+                                local origT = child.BackgroundTransparency
+                                child.BackgroundTransparency = 1
+                                tw(child, {BackgroundTransparency = origT}, TI_ENTRY_FADE)
+                            end
+
                         elseif child:IsA("ImageLabel") then
                             child.ImageTransparency = 1
                             tw(child, {ImageTransparency = 0}, TI_ENTRY_FADE)
+
                         elseif child:IsA("UIStroke") then
-                            local origTransparency = child.Transparency
+                            local origT = child.Transparency
                             child.Transparency = 1
-                            tw(child, {Transparency = origTransparency}, TI_ENTRY_FADE)
-                        elseif child:IsA("Frame") and child.Name ~= "Icon" then
-                            child.BackgroundTransparency = 1
-                            tw(child, {BackgroundTransparency = 0}, TI_ENTRY_FADE)
+                            tw(child, {Transparency = origT}, TI_ENTRY_FADE)
+
+                        elseif child:IsA("Frame") and child.Name ~= "Icon"
+                            and child.Name ~= "_DisabledOverlay" then
+                            -- Only fade sub-frames that are visible (not overlays already at 0.5+)
+                            if child.BackgroundTransparency < 0.9 then
+                                local origT = child.BackgroundTransparency
+                                child.BackgroundTransparency = 1
+                                tw(child, {BackgroundTransparency = origT}, TI_ENTRY_FADE)
+                            end
                         end
                     end
                 end)
-                if not ok and APTX.DevMode then
-                    warn("[APTX] animEntry error:", err)
-                end
+                if not ok and APTX.DevMode then warn("[APTX] animEntry error:", err) end
             end)
+
         else
-            -- Other (ScrollingFrame, etc.): just appear
+            -- ScrollingFrame and other non-Frame/non-Label: just appear
             card.Visible = true
         end
     end
@@ -1252,7 +1287,8 @@ function APTX:SelectSection(name)
     for _, section in ipairs(APTX.Sections) do
         if section.Name == name then
             -- Activate this section immediately
-            section.Container.Visible = true            -- Animate entry on first open
+            section.Container.Visible = true
+            -- Animate entry on first open
             if not section._entered then
                 section._entered = true
                 animEntry(section.Container)
@@ -1393,7 +1429,7 @@ function APTX:Button(sectionName, text, icon, callback)
     end)
     if not ok then
         warn("[APTX:Button] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Button:" .. tostring(text))
     end
     return result
 end
@@ -1532,7 +1568,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
     end)
     if not ok then
         warn("[APTX:Toggle] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Toggle:" .. tostring(text))
     end
     return result
 end
@@ -1729,7 +1765,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     end)
     if not ok then
         warn("[APTX:Slider] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Slider:" .. tostring(text))
     end
     return result
 end
@@ -1959,7 +1995,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
     end)
     if not ok then
         warn("[APTX:Menu] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Menu:" .. tostring(text))
     end
     return result
 end
@@ -2068,7 +2104,7 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
     end)
     if not ok then
         warn("[APTX:Input] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Input:" .. tostring(text))
     end
     return result
 end
@@ -2130,7 +2166,7 @@ function APTX:Label(sectionName, text)
     end)
     if not ok then
         warn("[APTX:Label] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
-        return nil
+        return makeNilProxy("Label:" .. tostring(text))
     end
     return result
 end
@@ -2454,7 +2490,8 @@ function APTX:Notify(params)
             Notif._alive = false
 
             if Notif._autoCloseThread then
-                task.cancel(Notif._autoCloseThread)
+                -- FIX: task.cancel throws if the thread already finished; pcall prevents the crash
+                pcall(task.cancel, Notif._autoCloseThread)
                 Notif._autoCloseThread = nil
             end
 
@@ -2535,7 +2572,7 @@ function APTX:Notify(params)
             if p.content then self._msg.Text = p.content end
             if p.resetTimer and p.resetTimer > 0 and self._divFill then
                 if self._autoCloseThread then
-                    task.cancel(self._autoCloseThread)
+                    pcall(task.cancel, self._autoCloseThread)
                     self._autoCloseThread = nil
                 end
                 self._divFill.Size = UDim2.new(1, 0, 1, 0)
