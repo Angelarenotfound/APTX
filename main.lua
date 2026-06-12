@@ -32,6 +32,15 @@ local Theme = {
 -- Weak table to register component references (avoids setting arbitrary properties on Roblox instances)
 local CompRegistry = setmetatable({}, { __mode = "k" })
 
+-- Dimension constants (Xerion Design System)
+local TOP_BAR_H = 44
+local CARD_H = 44
+local SIDEBAR_W = 160
+local PAD_SM = 12
+local PAD_MD = 14
+local CORNER_R = 12
+local BTN_H = 28
+
 local APTX = {}
 APTX.__index = APTX
 
@@ -190,38 +199,48 @@ local function makeDraggable(handle, target)
     return {c1, c2, c3, c4}
 end
 
---- Card creation — Xerion-style: returns card frame, border stroke, and layout
-local function makeCard(parent)
-local c = newF({
-Name = "Card",
-Size = UDim2.new(1, 0, 0, 44),
-BackgroundColor3 = Theme.Card,
-BorderSizePixel = 0,
-}, parent)
-newC(c, 10)
-c.Active = true
--- Outer border stroke (subtle silver)
-local borderStroke = newS(c, Theme.Border, 1)
-
--- Inner highlight stroke (Xerion signature: translucent silver inner glow)
-do
-    local ih = Instance.new("UIStroke")
-    ih.Color = Theme.BrandLo
-    ih.Thickness = 1
-    ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-    ih.Transparency = 0.85
-    ih.Parent = c
+--- Unified click handler for Frames (InputBegan, supports mouse + touch)
+local function connectClick(frame, fn)
+    return frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            fn()
+        end
+    end)
 end
 
-local layout = Instance.new("UIListLayout")
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.FillDirection = Enum.FillDirection.Horizontal
-layout.VerticalAlignment = Enum.VerticalAlignment.Center
-layout.Padding = UDim.new(0, 8)
-layout.Parent = c
-local pad = Instance.new("UIPadding")
-pad.PaddingLeft = UDim.new(0, 12)
-pad.PaddingRight = UDim.new(0, 12)
+--- Card creation — Xerion-style: returns card frame, border stroke, and layout
+local function makeCard(parent)
+    local c = newF({
+        Name = "Card",
+        Size = UDim2.new(1, 0, 0, CARD_H),
+        BackgroundColor3 = Theme.Card,
+        BorderSizePixel = 0,
+        Active = true,
+    }, parent)
+    newC(c, 10)
+    -- Outer border stroke (subtle silver)
+    local borderStroke = newS(c, Theme.Border, 1)
+
+    -- Inner highlight stroke (Xerion signature: translucent silver inner glow)
+    do
+        local ih = Instance.new("UIStroke")
+        ih.Color = Theme.BrandLo
+        ih.Thickness = 1
+        ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+        ih.Transparency = 0.85
+        ih.Parent = c
+    end
+
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = c
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, PAD_SM)
+    pad.PaddingRight = UDim.new(0, PAD_SM)
 pad.Parent = c
 return c, borderStroke, layout
 end
@@ -302,7 +321,8 @@ end
 APTX._connections = {}
 local player = Players.LocalPlayer
 if not player then
-    player = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    player = Players.LocalPlayer
 end
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -372,19 +392,16 @@ for _, s in ipairs({s1, s2, s3}) do
     table.insert(APTX._connections, sync)
 end
 
-APTX:CreateTopBar()
+APTX:CreateTopBar()    local container = newF({
+        Name = "Container",
+        Size = UDim2.new(1, 0, 1, -TOP_BAR_H),
+        Position = UDim2.new(0, 0, 0, TOP_BAR_H),
+        BackgroundTransparency = 1,
+    }, APTX.MainFrame)
 
-local container = newF({
-    Name = "Container",
-    Size = UDim2.new(1, 0, 1, -44),
-    Position = UDim2.new(0, 0, 0, 44),
-    BackgroundTransparency = 1,
-}, APTX.MainFrame)
+APTX:CreateSidebar(container)    APTX:CreateContentArea(container)
 
-APTX:CreateSidebar(container)
-APTX:CreateContentArea(container)
-
-if APTX.Draggable then
+    if APTX.Draggable then
     local dragConns = makeDraggable(APTX.TopBar, APTX.MainFrame)
     for _, conn in ipairs(dragConns) do
         table.insert(APTX._connections, conn)
@@ -396,14 +413,14 @@ function APTX:CreateTopBar()
     -- Xerion Navigation Bar — pure black, subtle border, silver typography
     local topBar = newF({
         Name = "TopBar",
-        Size = UDim2.new(1, 0, 0, 44),
+        Size = UDim2.new(1, 0, 0, TOP_BAR_H),
         BackgroundColor3 = Theme.TopBar,
         BorderSizePixel = 0,
     }, APTX.MainFrame)
-    newC(topBar, 12)
+    newC(topBar, CORNER_R)
     local clip = newF({
-        Size = UDim2.new(1, 0, 0, 12),
-        Position = UDim2.new(0, 0, 1, -12),
+        Size = UDim2.new(1, 0, 0, PAD_SM),
+        Position = UDim2.new(0, 0, 1, -PAD_SM),
         BackgroundColor3 = Theme.TopBar,
         BorderSizePixel = 0,
     }, topBar)
@@ -412,7 +429,7 @@ function APTX:CreateTopBar()
     -- Title with Xerion silver aesthetic
     local titleContainer = newF({
         Size = UDim2.new(0, 240, 1, 0),
-        Position = UDim2.new(0, 12, 0, 0),
+        Position = UDim2.new(0, PAD_SM, 0, 0),
         BackgroundTransparency = 1,
     }, topBar)
 
@@ -443,14 +460,13 @@ function APTX:CreateTopBar()
     -- Window controls — Xerion style: subtle silver on hover
     local btnFrame = newF({
         Name = "WindowControls",
-        Size = UDim2.new(0, 108, 0, 28),
-        Position = UDim2.new(1, -120, 0.5, -14),
+        Size = UDim2.new(0, 108, 0, BTN_H),
+        Position = UDim2.new(1, -120, 0.5, -PAD_MD),
         BackgroundTransparency = 1,
     }, topBar)
 
     -- Close button (Xerion red accent)
-    local closeBtn = newB({
-        Size = UDim2.new(0, 28, 0, 28),
+    local closeBtn = newB({            Size = UDim2.new(0, BTN_H, 0, BTN_H),
         Position = UDim2.new(0, 80, 0, 0),
         BackgroundColor3 = Color3.fromRGB(20, 20, 20),
         Text = "",
@@ -538,11 +554,11 @@ end
 function APTX:CreateSidebar(parent)
     local sidebar = newF({
         Name = "Sidebar",
-        Size = UDim2.new(0, 160, 1, 0),
+        Size = UDim2.new(0, SIDEBAR_W, 1, 0),
         BackgroundColor3 = Theme.Sidebar,
         BorderSizePixel = 0,
     }, parent)
-    newC(sidebar, 12)
+    newC(sidebar, CORNER_R)
     -- Xerion-style right divider: subtle silver line
     local rightBorder = newF({
         Size = UDim2.new(0, 1, 1, 0),
@@ -587,18 +603,18 @@ end
 function APTX:CreateContentArea(parent)
     local content = newF({
         Name = "ContentArea",
-        Size = UDim2.new(1, -160, 1, 0),
-        Position = UDim2.new(0, 160, 0, 0),
+        Size = UDim2.new(1, -SIDEBAR_W, 1, 0),
+        Position = UDim2.new(0, SIDEBAR_W, 0, 0),
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
     }, parent)
-    newC(content, 12)
+    newC(content, CORNER_R)
 
     local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 14)
-    pad.PaddingRight = UDim.new(0, 14)
-    pad.PaddingTop = UDim.new(0, 14)
-    pad.PaddingBottom = UDim.new(0, 14)
+    pad.PaddingLeft = UDim.new(0, PAD_MD)
+    pad.PaddingRight = UDim.new(0, PAD_MD)
+    pad.PaddingTop = UDim.new(0, PAD_MD)
+    pad.PaddingBottom = UDim.new(0, PAD_MD)
     pad.Parent = content
 
     APTX.ContentArea = content
@@ -648,8 +664,26 @@ end
 
 function APTX:ToggleVisibility()
     APTX.IsVisible = not APTX.IsVisible
-    local targetY = APTX.IsVisible and UDim2.new(0.5, -290, 0.5, -200) or UDim2.new(0.5, -290, 1.5, 0)
-    tw(APTX.MainFrame, {Position = targetY}, TI_BOUNCE)
+    local targetPos = APTX.IsVisible and UDim2.new(0.5, -290, 0.5, -200) or UDim2.new(0.5, -290, 1.5, 0)
+
+    -- Show shadows before animating in; hide after animating out
+    if APTX.IsVisible then
+        for _, s in ipairs({APTX.Shadow1, APTX.Shadow2, APTX.Shadow3}) do
+            if s then s.Visible = true end
+        end
+    end
+
+    tw(APTX.MainFrame, {Position = targetPos}, TI_BOUNCE)
+
+    if not APTX.IsVisible then
+        task.delay(TI_BOUNCE.Time, function()
+            if not APTX.IsVisible then
+                for _, s in ipairs({APTX.Shadow1, APTX.Shadow2, APTX.Shadow3}) do
+                    if s then s.Visible = false end
+                end
+            end
+        end)
+    end
 end
 
 function APTX:Destroy()
@@ -690,7 +724,7 @@ function APTX:Destroy()
     APTX._sectionHideDelays = {}
 
     -- Clear notification stack
-    NotifStack = {}
+    APTX._notifStack = {}
 
     APTX.Sections = {}
     APTX.CurrentSection = nil
@@ -923,7 +957,7 @@ end
 -- Uses pure fade-in (positions are managed by UIListLayout)
 local TI_ENTRY_FADE = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-local function animateSectionEntry(container)
+local function animEntry(container)
     if not container then return end
     -- Collect all non-layout children
     local cards = {}
@@ -945,7 +979,7 @@ local function animateSectionEntry(container)
                     tw(card, {TextTransparency = 0}, TI_ENTRY_FADE)
                 end)
                 if not ok and APTX.DevMode then
-                    warn("[APTX] animateSectionEntry error:", err)
+                    warn("[APTX] animEntry error:", err)
                 end
             end)
         elseif card:IsA("Frame") then
@@ -979,7 +1013,7 @@ local function animateSectionEntry(container)
                     end
                 end)
                 if not ok and APTX.DevMode then
-                    warn("[APTX] animateSectionEntry error:", err)
+                    warn("[APTX] animEntry error:", err)
                 end
             end)
         else
@@ -1083,7 +1117,7 @@ function APTX:Section(text, icon, default)
         initComponent(sectionComp, section.Container, nil)
         section._compRef = sectionComp
 
-        local function updateCanvasAndEmptyState()
+        local function syncCanvas()
             local hasContent = false
             for _, child in ipairs(section.Container:GetChildren()) do
                 if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
@@ -1095,7 +1129,7 @@ function APTX:Section(text, icon, default)
             section.Container.CanvasSize = UDim2.new(0, 0, 0, compLayout.AbsoluteContentSize.Y + 14)
         end
 
-        local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasAndEmptyState)
+        local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncCanvas)
         table.insert(sectionComp._connections, layoutConn)
 
         -- Track button connections so they can be cleaned up
@@ -1194,12 +1228,10 @@ function APTX:SelectSection(name)
     for _, section in ipairs(APTX.Sections) do
         if section.Name == name then
             -- Activate this section immediately
-            section.Container.Visible = true
-
-            -- Animate entry on first open
+            section.Container.Visible = true            -- Animate entry on first open
             if not section._entered then
                 section._entered = true
-                animateSectionEntry(section.Container)
+                animEntry(section.Container)
             end
 
             -- Xerion active state: dark active bg + silver accent bar + bright text
@@ -1257,7 +1289,7 @@ function APTX:Button(sectionName, text, icon, callback)
         end
 
         local card, stroke, layout = makeCard(section.Container)
-        card.Size = UDim2.new(1, 0, 0, 44)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
         -- Destroy the horizontal layout from makeCard for manual positioning
         layout:Destroy()
 
@@ -1289,7 +1321,7 @@ function APTX:Button(sectionName, text, icon, callback)
         -- Track tweens and their connections for proper cleanup
         comp._tweens = {}
 
-        local clickConn = card.MouseButton1Click:Connect(function()
+        local clickConn = connectClick(card, function()
             if comp._disabled then return end
 
             -- Cancel previous pending tweens to prevent overlap
@@ -1313,7 +1345,7 @@ function APTX:Button(sectionName, text, icon, callback)
             table.insert(comp._tweens, pt)
             local ptConn = pt.Completed:Connect(function()
                 if card and card.Parent then
-                    tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+                    tw(card, {Size = UDim2.new(1, 0, 0, CARD_H)}, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
                 end
             end)
             table.insert(comp._connections, ptConn)
@@ -1360,7 +1392,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         local debounce = false
 
         local card, stroke, layout = makeCard(section.Container)
-        card.Size = UDim2.new(1, 0, 0, 44)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
         layout:Destroy()
 
         local iconImg
@@ -1390,7 +1422,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             BorderSizePixel = 0,
             AutoButtonColor = false,
         }, card)
-        newC(track, 12)
+        newC(track, CORNER_R)
         -- Xerion silver border on track
         local trackStroke = newS(track, Theme.Border, 1)
         trackStroke.Transparency = 0.5
@@ -1445,7 +1477,7 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         track.MouseButton1Click:Connect(toggleAction)
 
         -- Also toggle when clicking anywhere on the card (not just the track)
-        card.MouseButton1Click:Connect(toggleAction)
+        connectClick(card, toggleAction)
 
         track.MouseEnter:Connect(function()
             tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
@@ -1504,8 +1536,8 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         card.Size = UDim2.new(1, 0, 0, 56)
         layout:Destroy()
         local pad = Instance.new("UIPadding")
-        pad.PaddingLeft = UDim.new(0, 12)
-        pad.PaddingRight = UDim.new(0, 12)
+        pad.PaddingLeft = UDim.new(0, PAD_SM)
+        pad.PaddingRight = UDim.new(0, PAD_SM)
         pad.PaddingTop = UDim.new(0, 8)
         pad.PaddingBottom = UDim.new(0, 8)
         pad.Parent = card
@@ -1600,7 +1632,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end
 
         -- Track these connections so they can be cleaned up
-        local inputBeganConn = track.InputBegan:Connect(function(input)
+        local ibConn = track.InputBegan:Connect(function(input)
             if comp._disabled then return end
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true
@@ -1608,22 +1640,22 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
                 tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
             end
         end)
-        table.insert(comp._connections, inputBeganConn)
+        table.insert(comp._connections, ibConn)
 
-        local inputEndedConn = track.InputEnded:Connect(function(input)
+        local ieConn = track.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
                 tw(knob, {Size = UDim2.new(0, 18, 0, 18)}, TI_HOVER)
             end
         end)
-        table.insert(comp._connections, inputEndedConn)
+        table.insert(comp._connections, ieConn)
 
-        local uisConn = UserInputService.InputChanged:Connect(function(input)
+        local uiConn = UserInputService.InputChanged:Connect(function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 updateSlider(input)
             end
         end)
-        table.insert(comp._connections, uisConn)
+        table.insert(comp._connections, uiConn)
 
         function comp:Edit(params)
             params = params or {}
@@ -1689,7 +1721,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         for _, v in ipairs(options) do table.insert(currentOptions, v) end
 
         local card, stroke, layout = makeCard(section.Container)
-        card.Size = UDim2.new(1, 0, 0, 44)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
         card.ClipsDescendants = true
         layout:Destroy()
         local pad = Instance.new("UIPadding")
@@ -1698,7 +1730,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         pad.Parent = card
 
         local topRow = newF({
-            Size = UDim2.new(1, 0, 0, 44),
+            Size = UDim2.new(1, 0, 0, CARD_H),
             BackgroundTransparency = 1,
         }, card)
 
@@ -1743,7 +1775,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         local optionsList = newF({
             Name = "OptionsList",
             Size = UDim2.new(1, 0, 0, 0),
-            Position = UDim2.new(0, 0, 0, 44),
+            Position = UDim2.new(0, 0, 0, CARD_H),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             ClipsDescendants = true,
@@ -1759,7 +1791,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         initComponent(comp, card, section)
 
         local optionBtns = {}
-        local function closeOutsideClick(input)
+        local function closeOutside(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 if isOpen then
                     local pos = input.Position
@@ -1767,7 +1799,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                     local absSize = card.AbsoluteSize
                     if pos.X < absPos.X or pos.X > absPos.X + absSize.X or pos.Y < absPos.Y or pos.Y > absPos.Y + absSize.Y then
                         isOpen = false
-                        tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
+                        tw(card, {Size = UDim2.new(1, 0, 0, CARD_H)}, TI_MED)
                         tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
                         tw(chevron, {Rotation = 0}, TI_MED)
                     end
@@ -1835,7 +1867,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                     if ol then ol.TextColor3 = Theme.Accent end
                     if cm then cm.Text = "✓" end
                     isOpen = false
-                    tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
+                    tw(card, {Size = UDim2.new(1, 0, 0, CARD_H)}, TI_MED)
                     tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
                     tw(chevron, {Rotation = 0}, TI_MED)
                 end)
@@ -1849,13 +1881,13 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
             if comp._disabled then return end
             isOpen = not isOpen
             local listH = isOpen and (#currentOptions * 37) or 0
-            local cardH = isOpen and (44 + listH) or 44
+            local cardH = isOpen and (CARD_H + listH) or CARD_H
             tw(card, {Size = UDim2.new(1, 0, 0, cardH)}, TI_MED)
             tw(optionsList, {Size = UDim2.new(1, 0, 0, listH)}, TI_MED)
             tw(chevron, {Rotation = isOpen and 180 or 0}, TI_MED)
         end)
 
-        local outsideConn = UserInputService.InputBegan:Connect(closeOutsideClick)
+        local outsideConn = UserInputService.InputBegan:Connect(closeOutside)
         table.insert(comp._connections, outsideConn)
 
         function comp:Edit(params)
@@ -1867,7 +1899,7 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                 rebuildOptions()
                 if isOpen then
                     isOpen = false
-                    tw(card, {Size = UDim2.new(1, 0, 0, 44)}, TI_MED)
+                    tw(card, {Size = UDim2.new(1, 0, 0, CARD_H)}, TI_MED)
                     tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
                     tw(chevron, {Rotation = 0}, TI_MED)
                 end
@@ -1911,8 +1943,8 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         card.Size = UDim2.new(1, 0, 0, 56)
         layout:Destroy()
         local pad = Instance.new("UIPadding")
-        pad.PaddingLeft = UDim.new(0, 12)
-        pad.PaddingRight = UDim.new(0, 12)
+        pad.PaddingLeft = UDim.new(0, PAD_SM)
+        pad.PaddingRight = UDim.new(0, PAD_SM)
         pad.PaddingTop = UDim.new(0, 6)
         pad.PaddingBottom = UDim.new(0, 6)
         pad.Parent = card
@@ -2073,22 +2105,22 @@ end
 
 local NOTIF_Z_BASE = 1000
 
-local NotifStack = {}
+APTX._notifStack = {}
 local NOTIF_GAP = 6
 local NOTIF_RIGHT_MARGIN = 2
 local notifCounter = 0
 
 local function repositionStack()
     -- First clean up dead entries from the stack
-    for i = #NotifStack, 1, -1 do
-        if not NotifStack[i] or not NotifStack[i]._alive then
-            table.remove(NotifStack, i)
+    for i = #APTX._notifStack, 1, -1 do
+        if not APTX._notifStack[i] or not APTX._notifStack[i]._alive then
+            table.remove(APTX._notifStack, i)
         end
     end
 
     local bottomOffset = NOTIF_RIGHT_MARGIN
     local visible = {}
-    for _, entry in ipairs(NotifStack) do
+    for _, entry in ipairs(APTX._notifStack) do
         if entry and entry._alive and entry._card and entry._card.Parent then
             table.insert(visible, entry)
         end
@@ -2114,9 +2146,9 @@ local function repositionStack()
 end
 
 local function removeFromStack(notif)
-    for i = #NotifStack, 1, -1 do
-        if NotifStack[i] == notif then
-            table.remove(NotifStack, i)
+    for i = #APTX._notifStack, 1, -1 do
+        if APTX._notifStack[i] == notif then
+            table.remove(APTX._notifStack, i)
             break
         end
     end
@@ -2153,7 +2185,7 @@ function APTX:Notify(params)
         local sICON = math.floor(14 * s)
 
         local btnH = hasBtns and sBTN_H or 0
-        local CARD_H = sTOPBAR + sBODY + (hasBtns and (sBTN_H + 8) or 8) + 2
+        local notifH = sTOPBAR + sBODY + (hasBtns and (sBTN_H + 8) or 8) + 2
 
         local accentColors = {
             info = Color3.fromRGB(192, 192, 192),
@@ -2170,14 +2202,14 @@ function APTX:Notify(params)
 
         local Card = newF({
         Name = "NotifCard_" .. notifCounter,
-        Size = UDim2.new(0, sW, 0, CARD_H),
-        Position = UDim2.new(1, sW + 20, 1, -CARD_H),
+        Size = UDim2.new(0, sW, 0, notifH),
+        Position = UDim2.new(1, sW + 20, 1, -notifH),
         BackgroundColor3 = Color3.fromRGB(7, 7, 7),
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = NOTIF_Z_BASE,
     }, gui)
-    newC(Card, 12)
+    newC(Card, CORNER_R)
     local cardStroke = newS(Card, Theme.Border, 1)
     -- Xerion inner glow
     local notifInnerHL = Instance.new("UIStroke")
@@ -2351,7 +2383,7 @@ function APTX:Notify(params)
             _msg = MsgLbl,
             _divFill = DividerFill,
             _alive = true,
-            _cardH = CARD_H,
+            _cardH = notifH,
             _cardW = sW,
             _autoCloseThread = nil,
         }
@@ -2367,7 +2399,7 @@ function APTX:Notify(params)
             end
         end)
 
-        table.insert(NotifStack, Notif)
+        table.insert(APTX._notifStack, Notif)
 
         local function fallClose(cb)
             if not Notif._alive then return end
@@ -2396,7 +2428,7 @@ function APTX:Notify(params)
                     return
                 end
                 local t2 = TweenService:Create(Card, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                    Position = UDim2.new(1, sW + 80, cur.Y.Scale, cur.Y.Offset + math.floor(CARD_H * 0.55)),
+                    Position = UDim2.new(1, sW + 80, cur.Y.Scale, cur.Y.Offset + math.floor(notifH * 0.55)),
                     Rotation = 22,
                 })
                 TweenService:Create(Card, TweenInfo.new(0.35, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
@@ -2501,12 +2533,26 @@ function APTX:Notify(params)
 
         function Notif:Shake()
             if not self._alive then return end
-            local orig = self._card.Position
-            for _, ox in ipairs({8, -8, 6, -6, 3, -3, 0}) do
-                tw(self._card, {Position = UDim2.new(orig.X.Scale, orig.X.Offset + ox, orig.Y.Scale, orig.Y.Offset)}, TweenInfo.new(0.04, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
-                task.wait(0.045)
+            local card = self._card
+            local orig = card.Position
+            local offsets = {8, -8, 6, -6, 3, -3, 0}
+            local shakeInfo = TweenInfo.new(0.04, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+            local function runStep(idx)
+                if not card or not card.Parent then return end
+                if idx > #offsets then
+                    card.Position = orig
+                    return
+                end
+                local tween = TweenService:Create(card, shakeInfo, {
+                    Position = UDim2.new(orig.X.Scale, orig.X.Offset + offsets[idx], orig.Y.Scale, orig.Y.Offset),
+                })
+                tween.Completed:Connect(function()
+                    runStep(idx + 1)
+                end)
+                tween:Play()
             end
-            self._card.Position = orig
+            runStep(1)
         end
 
         return Notif
