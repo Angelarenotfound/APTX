@@ -59,6 +59,7 @@ APTX.IsVisible = true
 APTX._connections = {}
 APTX._scale = 1
 APTX._sectionHideDelays = {}
+APTX._lastVisiblePos = nil  -- FIX #2b: track last visible position for restore after hide
 
 -- Reference resolution for scaling
 local REF_W = 1920
@@ -155,11 +156,13 @@ local function makeShadow(w, h, scale, trans)
 end
 
 local function makeOverlay(parent)
+    -- FIX #3: Use a dark semi-transparent overlay (not white). The black at 0.5
+    -- transparency creates a proper disabled dimming effect.
     local o = newF({
         Name = "_DisabledOverlay",
         Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 0.5,
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.45,
         BorderSizePixel = 0,
         ZIndex = 100,
     }, parent)
@@ -223,11 +226,12 @@ local function makeCard(parent)
     local borderStroke = newS(c, Theme.Border, 1)
 
     -- Inner highlight stroke (Xerion signature: translucent silver inner glow)
+    -- FIX #3b: Use Border mode instead of Contextual to avoid brightening child elements
     do
         local ih = Instance.new("UIStroke")
         ih.Color = Theme.BrandLo
         ih.Thickness = 1
-        ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+        ih.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         ih.Transparency = 0.85
         ih.Parent = c
     end
@@ -314,99 +318,109 @@ function APTX:Config(title, draggable, devmode)
 end
 
 function APTX:CreateGUI()
--- Clean up old connections before re-initializing
-for _, conn in ipairs(APTX._connections) do
-conn:Disconnect()
-end
-APTX._connections = {}
-local player = Players.LocalPlayer
-if not player then
-    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-    player = Players.LocalPlayer
-end
-local playerGui = player:WaitForChild("PlayerGui")
+    -- Clean up old connections before re-initializing
+    for _, conn in ipairs(APTX._connections) do
+        conn:Disconnect()
+    end
+    APTX._connections = {}
 
-if playerGui:FindFirstChild("APTXGui") then
-    playerGui.APTXGui:Destroy()
-end
+    -- FIX #1: Destroy old shadow instances so their Position signals don't fire
+    -- against nil references after GUI is recreated (was causing "attempt to index nil with 'Edit'")
+    if APTX.Shadow1 then APTX.Shadow1:Destroy(); APTX.Shadow1 = nil end
+    if APTX.Shadow2 then APTX.Shadow2:Destroy(); APTX.Shadow2 = nil end
+    if APTX.Shadow3 then APTX.Shadow3:Destroy(); APTX.Shadow3 = nil end
 
-APTX.GUI = Instance.new("ScreenGui")
-APTX.GUI.Name = "APTXGui"
-APTX.GUI.ResetOnSpawn = false
-APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-APTX.GUI.Parent = playerGui
+    local player = Players.LocalPlayer
+    if not player then
+        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+        player = Players.LocalPlayer
+    end
+    local playerGui = player:WaitForChild("PlayerGui")
 
--- Responsive scaling
-initResponsive()
+    if playerGui:FindFirstChild("APTXGui") then
+        playerGui.APTXGui:Destroy()
+    end
 
--- Detect mobile and adjust MainFrame size
-local isMobile = APTX.GUI.AbsoluteSize.X < 768
-local mfW = isMobile and math.min(580, APTX.GUI.AbsoluteSize.X - 16) or 580
-local mfH = isMobile and math.min(400, APTX.GUI.AbsoluteSize.Y - 16) or 400
+    APTX.GUI = Instance.new("ScreenGui")
+    APTX.GUI.Name = "APTXGui"
+    APTX.GUI.ResetOnSpawn = false
+    APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    APTX.GUI.Parent = playerGui
 
-APTX.MainFrame = newF({
-     Name = "MainFrame",
-    Size = UDim2.new(0, mfW, 0, mfH),
-    Position = UDim2.new(0.5, -mfW/2, 0.5, -mfH/2),
-    BackgroundColor3 = Theme.Background,
-    BorderSizePixel = 0,
-}, APTX.GUI)
-newC(APTX.MainFrame, 12)
-newS(APTX.MainFrame, Theme.Border, 1)
+    -- Responsive scaling
+    initResponsive()
 
--- Xerion ambient glow (top-center radial glow)
-local ambientGlow = newF({
-    Name = "AmbientGlow",
-    Size = UDim2.new(1, 0, 0, 200),
-    Position = UDim2.new(0, 0, 0, 0),
-    BackgroundColor3 = Color3.fromRGB(192, 192, 192),
-    BackgroundTransparency = 0.97,
-    BorderSizePixel = 0,
-}, APTX.MainFrame)
+    -- Detect mobile and adjust MainFrame size
+    local isMobile = APTX.GUI.AbsoluteSize.X < 768
+    local mfW = isMobile and math.min(580, APTX.GUI.AbsoluteSize.X - 16) or 580
+    local mfH = isMobile and math.min(400, APTX.GUI.AbsoluteSize.Y - 16) or 400
 
-local function syncShadow(s)
-    s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
-end
+    APTX.MainFrame = newF({
+        Name = "MainFrame",
+        Size = UDim2.new(0, mfW, 0, mfH),
+        Position = UDim2.new(0.5, -mfW/2, 0.5, -mfH/2),
+        BackgroundColor3 = Theme.Background,
+        BorderSizePixel = 0,
+    }, APTX.GUI)
+    newC(APTX.MainFrame, 12)
+    newS(APTX.MainFrame, Theme.Border, 1)
 
--- Xerion multi-layered shadows (more dramatic)
-local s1 = makeShadow(mfW, mfH, 1, 0.82)
-newC(s1, 14)
-s1.Parent = APTX.GUI
-syncShadow(s1)
-local s2 = makeShadow(mfW, mfH, 2, 0.90)
-newC(s2, 16)
-s2.Parent = APTX.GUI
-syncShadow(s2)
-local s3 = makeShadow(mfW, mfH, 3, 0.95)
-newC(s3, 18)
-s3.Parent = APTX.GUI
-syncShadow(s3)
-APTX.Shadow1 = s1
-APTX.Shadow2 = s2
-APTX.Shadow3 = s3
+    -- Xerion ambient glow (top-center radial glow)
+    local ambientGlow = newF({
+        Name = "AmbientGlow",
+        Size = UDim2.new(1, 0, 0, 200),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(192, 192, 192),
+        BackgroundTransparency = 0.97,
+        BorderSizePixel = 0,
+    }, APTX.MainFrame)
 
-for _, s in ipairs({s1, s2, s3}) do
-    local sync = APTX.MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-        syncShadow(s)
-    end)
-    table.insert(APTX._connections, sync)
-end
+    local function syncShadow(s)
+        s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
+    end
 
-APTX:CreateTopBar()    local container = newF({
+    -- Xerion multi-layered shadows (more dramatic)
+    local s1 = makeShadow(mfW, mfH, 1, 0.82)
+    newC(s1, 14)
+    s1.Parent = APTX.GUI
+    syncShadow(s1)
+    local s2 = makeShadow(mfW, mfH, 2, 0.90)
+    newC(s2, 16)
+    s2.Parent = APTX.GUI
+    syncShadow(s2)
+    local s3 = makeShadow(mfW, mfH, 3, 0.95)
+    newC(s3, 18)
+    s3.Parent = APTX.GUI
+    syncShadow(s3)
+    APTX.Shadow1 = s1
+    APTX.Shadow2 = s2
+    APTX.Shadow3 = s3
+
+    for _, s in ipairs({s1, s2, s3}) do
+        local sync = APTX.MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
+            syncShadow(s)
+        end)
+        table.insert(APTX._connections, sync)
+    end
+
+    APTX:CreateTopBar()
+
+    local container = newF({
         Name = "Container",
         Size = UDim2.new(1, 0, 1, -TOP_BAR_H),
         Position = UDim2.new(0, 0, 0, TOP_BAR_H),
         BackgroundTransparency = 1,
     }, APTX.MainFrame)
 
-APTX:CreateSidebar(container)    APTX:CreateContentArea(container)
+    APTX:CreateSidebar(container)
+    APTX:CreateContentArea(container)
 
     if APTX.Draggable then
-    local dragConns = makeDraggable(APTX.TopBar, APTX.MainFrame)
-    for _, conn in ipairs(dragConns) do
-        table.insert(APTX._connections, conn)
+        local dragConns = makeDraggable(APTX.TopBar, APTX.MainFrame)
+        for _, conn in ipairs(dragConns) do
+            table.insert(APTX._connections, conn)
+        end
     end
-end
 end
 
 function APTX:CreateTopBar()
@@ -651,12 +665,8 @@ function APTX:CreateHideButton()
     hideBtn.MouseEnter:Connect(onEnter)
     hideBtn.MouseLeave:Connect(onLeave)
     hideBtn.MouseButton1Click:Connect(function()
+        -- FIX #6: position update is now handled inside ToggleVisibility so all callers stay in sync
         APTX:ToggleVisibility()
-        if APTX.IsVisible then
-            tw(hideBtn, {Position = UDim2.new(0, 12, 0, 12)}, TI_SLOW)
-        else
-            tw(hideBtn, {Position = UDim2.new(0, 12, 1, -(hideBtn.Size.Y.Offset + 12))}, TI_SLOW)
-        end
     end)
 
     APTX.HideButton = hideBtn
@@ -664,18 +674,19 @@ end
 
 function APTX:ToggleVisibility()
     APTX.IsVisible = not APTX.IsVisible
-    local targetPos = APTX.IsVisible and UDim2.new(0.5, -290, 0.5, -200) or UDim2.new(0.5, -290, 1.5, 0)
 
-    -- Show shadows before animating in; hide after animating out
     if APTX.IsVisible then
+        -- Restore last dragged position instead of hardcoded offset
+        -- FIX #2a: use saved position so drag is preserved after hide/show
+        local restorePos = APTX._lastVisiblePos or UDim2.new(0.5, -(APTX.MainFrame.Size.X.Offset / 2), 0.5, -(APTX.MainFrame.Size.Y.Offset / 2))
         for _, s in ipairs({APTX.Shadow1, APTX.Shadow2, APTX.Shadow3}) do
             if s then s.Visible = true end
         end
-    end
-
-    tw(APTX.MainFrame, {Position = targetPos}, TI_BOUNCE)
-
-    if not APTX.IsVisible then
+        tw(APTX.MainFrame, {Position = restorePos}, TI_BOUNCE)
+    else
+        -- Save current position before hiding
+        APTX._lastVisiblePos = APTX.MainFrame.Position
+        tw(APTX.MainFrame, {Position = UDim2.new(0.5, -(APTX.MainFrame.Size.X.Offset / 2), 1.5, 0)}, TI_BOUNCE)
         task.delay(TI_BOUNCE.Time, function()
             if not APTX.IsVisible then
                 for _, s in ipairs({APTX.Shadow1, APTX.Shadow2, APTX.Shadow3}) do
@@ -683,6 +694,15 @@ function APTX:ToggleVisibility()
                 end
             end
         end)
+    end
+
+    -- FIX #6: Update HideButton position here so ALL callers keep it in sync
+    if APTX.HideButton then
+        if APTX.IsVisible then
+            tw(APTX.HideButton, {Position = UDim2.new(0, 12, 0, 12)}, TI_SLOW)
+        else
+            tw(APTX.HideButton, {Position = UDim2.new(0, 12, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
+        end
     end
 end
 
@@ -887,6 +907,10 @@ local function initComponent(comp, frame, sectionRef)
         local tipVisible = false
         local showThread = nil
 
+        -- FIX #8: Assign tooltipObj immediately so comp:Remove() can always destroy
+        -- the tooltip instance, even if called during the show-delay window.
+        self._tooltipObj = tip
+
         local function showTooltip()
             if not tip or not tip.Parent then return end
             if not self._frame or not self._frame.Parent then return end
@@ -947,7 +971,7 @@ local function initComponent(comp, frame, sectionRef)
         end)
 
         self._tooltipCons = {hEnter, hLeave}
-        self._tooltipObj = tip
+        -- FIX #8b: _tooltipObj already assigned above at creation time (not here at the end)
     end
 
     return comp
@@ -1476,8 +1500,10 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
 
         track.MouseButton1Click:Connect(toggleAction)
 
-        -- Also toggle when clicking anywhere on the card (not just the track)
-        connectClick(card, toggleAction)
+        -- FIX #5: Removed connectClick(card, toggleAction) to prevent double-firing.
+        -- Clicking the track already bubbles correctly; adding a second InputBegan on
+        -- the parent card caused the toggle to fire twice (especially with Touch input).
+        -- The card hover area still works visually via initHover.
 
         track.MouseEnter:Connect(function()
             tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
@@ -1580,7 +1606,9 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         local track = newF({
             Name = "Track",
             Size = UDim2.new(1, 0, 0, 6),
-            Position = UDim2.new(0, 0, 1, -6),
+            -- FIX #7: Was UDim2(0,0,1,-6) which placed it outside the PaddingBottom=8 area.
+            -- Now positioned relative to the bottom of topRow so it stays inside padding bounds.
+            Position = UDim2.new(0, 0, 1, -14),
             BackgroundColor3 = Color3.fromRGB(18, 18, 18),
             BorderSizePixel = 0,
             Active = true,
@@ -1794,10 +1822,16 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         local function closeOutside(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 if isOpen then
+                    -- FIX #4: Use AbsolutePosition/Size which already account for scroll offset and UIScale
+                    -- These are updated by Roblox in real time regardless of ScrollingFrame position
                     local pos = input.Position
                     local absPos = card.AbsolutePosition
                     local absSize = card.AbsoluteSize
-                    if pos.X < absPos.X or pos.X > absPos.X + absSize.X or pos.Y < absPos.Y or pos.Y > absPos.Y + absSize.Y then
+                    local scale = APTX._scale or 1
+                    -- Expand hit area by the full open height so clicks inside the dropdown list don't close it
+                    local expandedH = absSize.Y + (#currentOptions * 37 * scale)
+                    if pos.X < absPos.X or pos.X > absPos.X + absSize.X
+                        or pos.Y < absPos.Y or pos.Y > absPos.Y + expandedH then
                         isOpen = false
                         tw(card, {Size = UDim2.new(1, 0, 0, CARD_H)}, TI_MED)
                         tw(optionsList, {Size = UDim2.new(1, 0, 0, 0)}, TI_MED)
@@ -2157,9 +2191,12 @@ end
 
 function APTX:Notify(params)
     local ok, result = pcall(function()
+        -- FIX #9: Run all assertions BEFORE any side effects so notifCounter
+        -- doesn't increment on a failed call
         assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
         assert(params.title, "[APTX:Notify] params.title es requerido")
         assert(params.content, "[APTX:Notify] params.content es requerido")
+        assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
 
         local title = params.title
         local body = params.content
@@ -2195,9 +2232,15 @@ function APTX:Notify(params)
             warning = Theme.Warning,
         }
 
-        assert(APTX.GUI, "[APTX:Notify] Llama APTX:Config() antes de usar Notify")
-        local gui = APTX.GUI
-
+        -- FIX #11: Create notifications in a separate ScreenGui that is NOT under UIScale.
+        -- If Card lived under APTX.GUI, the UIScale would scale pixel offsets making
+        -- notifications fly off-screen on mobile. A dedicated gui bypasses this entirely.
+        local notifGui = Instance.new("ScreenGui")
+        notifGui.Name = "APTXNotifGui"
+        notifGui.ResetOnSpawn = false
+        notifGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        notifGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+        local gui = notifGui
         notifCounter = notifCounter + 1
 
         local Card = newF({
@@ -2215,7 +2258,8 @@ function APTX:Notify(params)
     local notifInnerHL = Instance.new("UIStroke")
     notifInnerHL.Color = Theme.BrandLo
     notifInnerHL.Thickness = 1
-    notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    -- FIX #3c: Border mode to avoid whitening child elements inside the notification card
+    notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     notifInnerHL.Transparency = 0.85
     notifInnerHL.Parent = Card
 
@@ -2396,6 +2440,10 @@ function APTX:Notify(params)
                     Notif._autoCloseThread = nil
                 end
                 removeFromStack(Notif)
+            end
+            -- FIX #11c: Clean up the dedicated notif ScreenGui when its card is gone
+            if notifGui and notifGui.Parent then
+                notifGui:Destroy()
             end
         end)
 
