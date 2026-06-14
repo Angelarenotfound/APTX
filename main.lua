@@ -241,11 +241,9 @@ local function makeCard(parent)
         Active = true,
     }, parent)
     newC(c, 10)
-    -- Outer border stroke (subtle silver)
     local borderStroke = newS(c, Theme.Border, 1)
 
-    -- Inner highlight stroke (Xerion signature: translucent silver inner glow)
-    -- FIX #3b: Use Border mode instead of Contextual to avoid brightening child elements
+    -- Inner highlight stroke — Border mode only, never Contextual (avoids whitening child elements)
     do
         local ih = Instance.new("UIStroke")
         ih.Color = Theme.BrandLo
@@ -261,11 +259,15 @@ local function makeCard(parent)
     layout.VerticalAlignment = Enum.VerticalAlignment.Center
     layout.Padding = UDim.new(0, 8)
     layout.Parent = c
+
     local pad = Instance.new("UIPadding")
     pad.PaddingLeft = UDim.new(0, PAD_SM)
     pad.PaddingRight = UDim.new(0, PAD_SM)
-pad.Parent = c
-return c, borderStroke, layout
+    pad.PaddingTop = UDim.new(0, 0)
+    pad.PaddingBottom = UDim.new(0, 0)
+    pad.Parent = c
+
+    return c, borderStroke, layout
 end
 
 local function initHover(comp, card, stroke)
@@ -285,42 +287,35 @@ end
 
 --- Initialize the UIScale system for responsive design
 local function initResponsive()
-if not APTX.GUI then return end
--- Remove existing UIScale if any
-local existing = APTX.GUI:FindFirstChildOfClass("UIScale")
-if existing then existing:Destroy() end
-
-local uiScale = Instance.new("UIScale")
-uiScale.Name = "APTXScale"
-uiScale.Parent = APTX.GUI
-
-local function updateScale()
     if not APTX.GUI then return end
-    local screenSize = APTX.GUI.AbsoluteSize
-    local isMobile = screenSize.X < 768
-    local scale
-    if isMobile then
-        -- On mobile, occupy ~95% of screen width for better visibility
-        scale = screenSize.X / 580
-        -- Also consider height to avoid overflow
-        local heightScale = screenSize.Y / 400
-        scale = math.min(scale, heightScale)
-        -- Ensure minimum size is usable on very small screens
-        scale = math.max(scale, 0.8)
-    else
-        scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
+    local existing = APTX.GUI:FindFirstChildOfClass("UIScale")
+    if existing then existing:Destroy() end
+
+    local uiScale = Instance.new("UIScale")
+    uiScale.Name = "APTXScale"
+    uiScale.Parent = APTX.GUI
+
+    local function updateScale()
+        if not APTX.GUI then return end
+        local screenSize = APTX.GUI.AbsoluteSize
+        local isMobile = screenSize.X < 768
+        local scale
+        if isMobile then
+            scale = screenSize.X / 580
+            local heightScale = screenSize.Y / 400
+            scale = math.min(scale, heightScale)
+            scale = math.max(scale, 0.8)
+        else
+            scale = math.min(screenSize.X / REF_W, screenSize.Y / REF_H)
+        end
+        scale = clamp(scale, 0.8, 2.5)
+        APTX._scale = scale
+        uiScale.Scale = scale
     end
-    scale = clamp(scale, 0.8, 2.5)
-    APTX._scale = scale
-    uiScale.Scale = scale
-end
 
--- Connect to size changes
-local sizeConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale)
-table.insert(APTX._connections, sizeConn)
-
--- Initial call sets the scale immediately
-updateScale()
+    local sizeConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale)
+    table.insert(APTX._connections, sizeConn)
+    updateScale()
 end
 
 --- Public API
@@ -493,71 +488,24 @@ function APTX:CreateTopBar()
     -- Window controls — Xerion style: subtle silver on hover
     local btnFrame = newF({
         Name = "WindowControls",
-        Size = UDim2.new(0, 108, 0, BTN_H),
-        Position = UDim2.new(1, -120, 0.5, -PAD_MD),
+        Size = UDim2.new(0, 96, 0, BTN_H),
+        Position = UDim2.new(1, -108, 0.5, -BTN_H/2),
         BackgroundTransparency = 1,
     }, topBar)
+    -- Use a layout so buttons never overlap regardless of size changes
+    do
+        local bl = Instance.new("UIListLayout")
+        bl.FillDirection = Enum.FillDirection.Horizontal
+        bl.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        bl.VerticalAlignment = Enum.VerticalAlignment.Center
+        bl.Padding = UDim.new(0, 4)
+        bl.Parent = btnFrame
+    end
 
-    -- Close button (Xerion red accent)
-    local closeBtn = newB({            Size = UDim2.new(0, BTN_H, 0, BTN_H),
-        Position = UDim2.new(0, 80, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-        Text = "",
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, btnFrame)
-    newC(closeBtn, 14)
-    local closeX = newL({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "✕",
-        TextColor3 = Color3.fromRGB(80, 80, 80),
-        Font = Enum.Font.Gotham,
-        TextSize = 12,
-    }, closeBtn)
-    closeBtn.MouseEnter:Connect(function()
-        tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
-        tw(closeX, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
-    end)
-    closeBtn.MouseLeave:Connect(function()
-        tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
-        tw(closeX, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
-    end)
-    closeBtn.MouseButton1Click:Connect(function()
-        APTX:ToggleVisibility()
-    end)
-
-    -- Maximize button (Xerion silver success)
-    local maxBtn = newB({
-        Size = UDim2.new(0, 28, 0, 28),
-        Position = UDim2.new(0, 42, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-        Text = "",
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, btnFrame)
-    newC(maxBtn, 14)
-    local maxBox = newL({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "□",
-        TextColor3 = Color3.fromRGB(80, 80, 80),
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-    }, maxBtn)
-    maxBtn.MouseEnter:Connect(function()
-        tw(maxBtn, {BackgroundColor3 = Theme.Success}, TI_HOVER)
-        tw(maxBox, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
-    end)
-    maxBtn.MouseLeave:Connect(function()
-        tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
-        tw(maxBox, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
-    end)
-
-    -- Minimize button (Xerion silver warning)
+    -- Minimize button
     local minBtn = newB({
-        Size = UDim2.new(0, 28, 0, 28),
-        Position = UDim2.new(0, 4, 0, 0),
+        Name = "MinBtn",
+        Size = UDim2.new(0, BTN_H, 0, BTN_H),
         BackgroundColor3 = Color3.fromRGB(20, 20, 20),
         Text = "",
         BorderSizePixel = 0,
@@ -574,11 +522,68 @@ function APTX:CreateTopBar()
     }, minBtn)
     minBtn.MouseEnter:Connect(function()
         tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
-        tw(minLine, {TextColor3 = Color3.new(1, 1, 1)}, TI_HOVER)
+        tw(minLine, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
     end)
     minBtn.MouseLeave:Connect(function()
         tw(minBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
         tw(minLine, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+    end)
+
+    -- Maximize button
+    local maxBtn = newB({
+        Name = "MaxBtn",
+        Size = UDim2.new(0, BTN_H, 0, BTN_H),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+        Text = "",
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+    }, btnFrame)
+    newC(maxBtn, 14)
+    local maxBox = newL({
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "□",
+        TextColor3 = Color3.fromRGB(80, 80, 80),
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+    }, maxBtn)
+    maxBtn.MouseEnter:Connect(function()
+        tw(maxBtn, {BackgroundColor3 = Theme.Success}, TI_HOVER)
+        tw(maxBox, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
+    end)
+    maxBtn.MouseLeave:Connect(function()
+        tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
+        tw(maxBox, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+    end)
+
+    -- Close button
+    local closeBtn = newB({
+        Name = "CloseBtn",
+        Size = UDim2.new(0, BTN_H, 0, BTN_H),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+        Text = "",
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+    }, btnFrame)
+    newC(closeBtn, 14)
+    local closeX = newL({
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "✕",
+        TextColor3 = Color3.fromRGB(80, 80, 80),
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+    }, closeBtn)
+    closeBtn.MouseEnter:Connect(function()
+        tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
+        tw(closeX, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
+    end)
+    closeBtn.MouseLeave:Connect(function()
+        tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
+        tw(closeX, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+    end)
+    closeBtn.MouseButton1Click:Connect(function()
+        APTX:ToggleVisibility()
     end)
 
     APTX.TopBar = topBar
@@ -640,16 +645,10 @@ function APTX:CreateContentArea(parent)
         Position = UDim2.new(0, SIDEBAR_W, 0, 0),
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
+        ClipsDescendants = true,
     }, parent)
     newC(content, CORNER_R)
-
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, PAD_MD)
-    pad.PaddingRight = UDim.new(0, PAD_MD)
-    pad.PaddingTop = UDim.new(0, PAD_MD)
-    pad.PaddingBottom = UDim.new(0, PAD_MD)
-    pad.Parent = content
-
+    -- No UIPadding here — sections manage their own padding internally
     APTX.ContentArea = content
 end
 
@@ -1160,12 +1159,18 @@ function APTX:Section(text, icon, default)
         compLayout.Padding = UDim.new(0, 6)
         compLayout.Parent = section.Container
 
+        -- Top/bottom padding inside the section scroll area
+        local sectionPad = Instance.new("UIPadding")
+        sectionPad.PaddingTop = UDim.new(0, 6)
+        sectionPad.PaddingBottom = UDim.new(0, 8)
+        sectionPad.Parent = section.Container
+
         -- Empty state placeholder label
         local emptyLabel = newL({
             Name = "_EmptyPlaceholder",
             Size = UDim2.new(1, 0, 0, 36),
             BackgroundTransparency = 1,
-            Text = "No hay elementos en esta secci├│n.",
+            Text = "No hay elementos en esta seccion.",
             TextColor3 = Theme.TextDisabled,
             Font = Enum.Font.Gotham,
             TextSize = 13,
@@ -1179,12 +1184,14 @@ function APTX:Section(text, icon, default)
         local function syncCanvas()
             local hasContent = false
             for _, child in ipairs(section.Container:GetChildren()) do
-                if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
+                if not child:IsA("UIListLayout") and not child:IsA("UIPadding")
+                    and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
                     hasContent = true
                     break
                 end
             end
             emptyLabel.Visible = not hasContent
+            -- +14 accounts for 6px PaddingTop + 8px PaddingBottom from sectionPad
             section.Container.CanvasSize = UDim2.new(0, 0, 0, compLayout.AbsoluteContentSize.Y + 14)
         end
 
@@ -1277,7 +1284,7 @@ function APTX:Section(text, icon, default)
         return sectionComp
     end)
     if not ok then
-        warn("[APTX:Section] Error creando secci├│n '" .. tostring(text) .. "': " .. tostring(result))
+        warn("[APTX:Section] Error creando seccion '" .. tostring(text) .. "': " .. tostring(result))
         return nil
     end
     return result
@@ -1350,20 +1357,18 @@ function APTX:Button(sectionName, text, icon, callback)
 
         local card, stroke, layout = makeCard(section.Container)
         card.Size = UDim2.new(1, 0, 0, CARD_H)
-        -- Destroy the horizontal layout from makeCard for manual positioning
-        layout:Destroy()
+        -- Keep the UIListLayout from makeCard — it handles icon + label alignment automatically
 
         local iconImg
         if icon then
             iconImg = newI(icon, 16, card)
-            iconImg.Position = UDim2.new(0, 0, 0.5, -8)
+            iconImg.LayoutOrder = 1
         end
 
-        -- Label fills remaining space
         local label = newL({
             Name = "Label",
             Size = UDim2.new(1, 0, 1, 0),
-            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            LayoutOrder = 2,
             BackgroundTransparency = 1,
             Text = text,
             TextColor3 = Theme.TextPrimary,
@@ -1453,18 +1458,19 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
 
         local card, stroke, layout = makeCard(section.Container)
         card.Size = UDim2.new(1, 0, 0, CARD_H)
-        layout:Destroy()
+        -- Keep UIListLayout from makeCard for icon + label
 
         local iconImg
         if icon then
             iconImg = newI(icon, 16, card)
-            iconImg.Position = UDim2.new(0, 0, 0.5, -8)
+            iconImg.LayoutOrder = 1
         end
 
         local label = newL({
             Name = "Label",
-            Size = UDim2.new(1, -72, 1, 0),
-            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            -- Fill all horizontal space except the track (48px)
+            Size = UDim2.new(1, -(icon and 16+8 or 0) - 52, 1, 0),
+            LayoutOrder = 2,
             BackgroundTransparency = 1,
             Text = text,
             TextColor3 = Theme.TextPrimary,
@@ -1473,14 +1479,16 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             TextXAlignment = Enum.TextXAlignment.Left,
         }, card)
 
+        -- Track placed absolutely at right edge; UIListLayout handles left content
         local track = newB({
             Name = "Track",
             Size = UDim2.new(0, 44, 0, 24),
-            Position = UDim2.new(1, -44, 0.5, -12),
+            Position = UDim2.new(1, -(44 + PAD_SM), 0.5, -12),
             BackgroundColor3 = Color3.fromRGB(30, 30, 30),
             Text = "",
             BorderSizePixel = 0,
             AutoButtonColor = false,
+            ZIndex = 2,
         }, card)
         newC(track, CORNER_R)
         -- Xerion silver border on track
@@ -1595,17 +1603,20 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         local value = default or min
 
         local card, stroke, layout = makeCard(section.Container)
-        card.Size = UDim2.new(1, 0, 0, 56)
+        card.Size = UDim2.new(1, 0, 0, 58)
         layout:Destroy()
+
         local pad = Instance.new("UIPadding")
         pad.PaddingLeft = UDim.new(0, PAD_SM)
         pad.PaddingRight = UDim.new(0, PAD_SM)
         pad.PaddingTop = UDim.new(0, 8)
-        pad.PaddingBottom = UDim.new(0, 8)
+        pad.PaddingBottom = UDim.new(0, 10)
         pad.Parent = card
 
+        -- Top row: icon + label + value. Height=18, anchored to top of padded area
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, 18),
+            Position = UDim2.new(0, 0, 0, 0),
             BackgroundTransparency = 1,
         }, card)
 
@@ -1639,12 +1650,11 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             TextXAlignment = Enum.TextXAlignment.Right,
         }, topRow)
 
+        -- Track: 6px tall, positioned 8px below topRow (18+8=26px from padded top)
         local track = newF({
             Name = "Track",
             Size = UDim2.new(1, 0, 0, 6),
-            -- FIX #7: Was UDim2(0,0,1,-6) which placed it outside the PaddingBottom=8 area.
-            -- Now positioned relative to the bottom of topRow so it stays inside padding bounds.
-            Position = UDim2.new(0, 0, 1, -14),
+            Position = UDim2.new(0, 0, 0, 26),
             BackgroundColor3 = Color3.fromRGB(18, 18, 18),
             BorderSizePixel = 0,
             Active = true,
@@ -1779,6 +1789,11 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
             error("Section not found: " .. tostring(sectionName))
         end
 
+        -- Validate options before any UI is created
+        if not options or #options == 0 then
+            options = {"(sin opciones)"}
+        end
+
         local isOpen = false
         local selected = default or options[1]
         local currentOptions = {}
@@ -1788,13 +1803,16 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         card.Size = UDim2.new(1, 0, 0, CARD_H)
         card.ClipsDescendants = true
         layout:Destroy()
+
         local pad = Instance.new("UIPadding")
-        pad.PaddingLeft = UDim.new(0, 12)
-        pad.PaddingRight = UDim.new(0, 12)
+        pad.PaddingLeft = UDim.new(0, PAD_SM)
+        pad.PaddingRight = UDim.new(0, PAD_SM)
         pad.Parent = card
 
+        -- topRow fills the header portion only (CARD_H height, not the whole expanding card)
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, CARD_H),
+            Position = UDim2.new(0, 0, 0, 0),
             BackgroundTransparency = 1,
         }, card)
 
@@ -2010,17 +2028,20 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         end
 
         local card, stroke, layout = makeCard(section.Container)
-        card.Size = UDim2.new(1, 0, 0, 56)
+        card.Size = UDim2.new(1, 0, 0, 60)
         layout:Destroy()
+
         local pad = Instance.new("UIPadding")
         pad.PaddingLeft = UDim.new(0, PAD_SM)
         pad.PaddingRight = UDim.new(0, PAD_SM)
-        pad.PaddingTop = UDim.new(0, 6)
-        pad.PaddingBottom = UDim.new(0, 6)
+        pad.PaddingTop = UDim.new(0, 8)
+        pad.PaddingBottom = UDim.new(0, 8)
         pad.Parent = card
 
+        -- Label row: 18px tall, at top of padded area
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, 18),
+            Position = UDim2.new(0, 0, 0, 0),
             BackgroundTransparency = 1,
         }, card)
 
@@ -2042,10 +2063,11 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
             TextXAlignment = Enum.TextXAlignment.Left,
         }, topRow)
 
+        -- InputBox: 22px tall, 4px below topRow (18+4=22px from padded top)
         local inputBox = Instance.new("TextBox")
         inputBox.Name = "InputBox"
-        inputBox.Size = UDim2.new(1, 0, 0, 26)
-        inputBox.Position = UDim2.new(0, 0, 1, -26)
+        inputBox.Size = UDim2.new(1, 0, 0, 22)
+        inputBox.Position = UDim2.new(0, 0, 0, 22)
         inputBox.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
         inputBox.BorderSizePixel = 0
         inputBox.PlaceholderText = placeholder or ""
@@ -2280,24 +2302,22 @@ function APTX:Notify(params)
         notifCounter = notifCounter + 1
 
         local Card = newF({
-        Name = "NotifCard_" .. notifCounter,
-        Size = UDim2.new(0, sW, 0, notifH),
-        Position = UDim2.new(1, sW + 20, 1, -notifH),
-        BackgroundColor3 = Color3.fromRGB(7, 7, 7),
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        ZIndex = NOTIF_Z_BASE,
-    }, gui)
-    newC(Card, CORNER_R)
-    local cardStroke = newS(Card, Theme.Border, 1)
-    -- Xerion inner glow
-    local notifInnerHL = Instance.new("UIStroke")
-    notifInnerHL.Color = Theme.BrandLo
-    notifInnerHL.Thickness = 1
-    -- FIX #3c: Border mode to avoid whitening child elements inside the notification card
-    notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    notifInnerHL.Transparency = 0.85
-    notifInnerHL.Parent = Card
+            Name = "NotifCard_" .. notifCounter,
+            Size = UDim2.new(0, sW, 0, notifH),
+            Position = UDim2.new(1, sW + 20, 1, -notifH),
+            BackgroundColor3 = Color3.fromRGB(7, 7, 7),
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = NOTIF_Z_BASE,
+        }, gui)
+        newC(Card, CORNER_R)
+        local cardStroke = newS(Card, Theme.Border, 1)
+        local notifInnerHL = Instance.new("UIStroke")
+        notifInnerHL.Color = Theme.BrandLo
+        notifInnerHL.Thickness = 1
+        notifInnerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        notifInnerHL.Transparency = 0.85
+        notifInnerHL.Parent = Card
 
         local accentBar = newF({
             Name = "AccentBar",
@@ -2643,7 +2663,7 @@ function APTX:Notify(params)
         return Notif
     end)
     if not ok then
-        warn("[APTX:Notify] Error creando notificaci├│n: " .. tostring(result))
+        warn("[APTX:Notify] Error creando notificacion: " .. tostring(result))
         return nil
     end
     return result
