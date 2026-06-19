@@ -1,698 +1,446 @@
 local OPT = {}
 
--- CONFIGURACI脫N POR DEFECTO
 local CONFIG = {
-    targetFPS = 60,
-    recoverMargin = 10,
-    sampleInterval = 1,
-    confirmSamples = 3,
-    particleScale = 0.6, -- Escala de reducci贸n de part铆culas
-    fovReduction = 8,
-    farPlaneTarget = 350,
-    maxTier = 7,
-    minFOV = 50,
-    onTierChange = nil,
-    lightShadowsTransparency = 0.5, -- Nueva configuraci贸n para transparencia de sombras de luces
-    decalTransparency = 0.5, -- Nueva configuraci贸n para transparencia de calcoman铆as
-    textureTransparency = 0.5, -- Nueva configuraci贸n para transparencia de texturas
-    soundVolumeReduction = 0.5, -- Nueva configuraci贸n para reducci贸n de volumen de sonido
-    explosionScale = 0.5, -- Nueva configuraci贸n para escala de explosiones
-    explosionTransparency = 0.5, -- Nueva configuraci贸n para transparencia de explosiones
+    targetFPS            = 60,
+    recoverMargin        = 10,
+    sampleInterval       = 1,
+    confirmSamples       = 3,
+    particleScale        = 0.6,
+    fovReduction         = 8,
+    farPlaneTarget       = 350,
+    maxTier              = 7,
+    minFOV               = 50,
+    decalTransparency    = 0.5,
+    textureTransparency  = 0.5,
+    soundVolumeReduction = 0.5,
+    explosionScale       = 0.5,
+    explosionTransparency = 0.5,
+    onTierChange         = nil,
 }
 
--- ESTADO INTERNO
-local _isRunning = false
-local _currentTier = 0
-local _originalValues = {}
-local _connectedEvents = {}
-local _trackedEmitters = {}
-local _trackedTrails = {}
-local _trackedLights = {}
-local _trackedDecals = {}
-local _trackedTextures = {}
-local _trackedSounds = {}
-local _trackedHumanoids = {}
-local _trackedParts = {}
-local _trackedMeshParts = {}
-local _trackedFaceInstances = {}
-local _trackedShirtGraphics = {}
-local _trackedPostEffects = {}
-local _trackedExplosions = {}
-local _trackedClothing = {}
+local _running = false
+local _tier    = 0
+local _orig    = {}
+local _events  = {}
 
 local _fpsSamples = {}
-local _fpsCounter = 0
-local _fpsAverage = 0
-local _lastSampleTime = 0
-local _tierUpCounter = 0
-local _tierDownCounter = 0
+local _fpsAvg     = 0
+local _lastSample = 0
+local _upCount    = 0
+local _downCount  = 0
 
--- SERVICIOS DE ROBLOX
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
-local Workspace = game:GetService("Workspace")
+local Players         = game:GetService("Players")
+local RunService      = game:GetService("RunService")
+local Workspace       = game:GetService("Workspace")
 local MaterialService = game:GetService("MaterialService")
-local Debris = game:GetService("Debris")
+local Debris          = game:GetService("Debris")
 
--- VALORES ORIGINALES GLOBALES
-local _originalCameraFOV = game.Workspace.CurrentCamera.FieldOfView
-local _originalCameraFarPlane = game.Workspace.CurrentCamera.FarPlane
-local _originalRenderingQualityLevel = settings().Rendering.QualityLevel
-local _originalRenderingMeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel
-local _originalMaterialServiceUse2022Materials = MaterialService.Use2022Materials
-local _originalMaterialServiceMaterials = {}
-
--- DEFINICI脫N DE TIERS DE OPTIMIZACI脫N (de menor a mayor impacto)
--- Cada tier aplica un conjunto de optimizaciones. Revertir un tier significa deshacer esas optimizaciones.
 local TIERS = {
     [1] = {
-        name = "Reducci贸n Sutil de Part铆culas y Trails",
-        apply = function(instance)
-            if instance:IsA("ParticleEmitter") or instance:IsA("Trail") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Enabled = instance.Enabled, Rate = instance.Rate, Transparency = instance.Transparency}
-                    instance._origRate = instance.Rate -- Para restaurar Rate si es modificado por particleScale
-                end
-                instance.Transparency = math.max(instance.Transparency, 0.2) -- Hacerlas un poco transparentes
-                instance.Rate = instance.Rate * CONFIG.particleScale -- Reducir tasa de emisi贸n
-                table.insert(_trackedEmitters, instance)
-            end
-        end,
-        revert = function(instance)
-            if instance:IsA("ParticleEmitter") or instance:IsA("Trail") then
-                local orig = _originalValues[instance]
-                if orig then
-                    instance.Enabled = orig.Enabled
-                    instance.Rate = orig.Rate
-                    instance.Transparency = orig.Transparency
-                end
-            end
-        end,
-        check = function(instance) return instance:IsA("ParticleEmitter") or instance:IsA("Trail") end,
+        tracked = {},
+        check   = function(i) return i:IsA("ParticleEmitter") or i:IsA("Trail") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedEmitters,
+        apply = function(t, i)
+            if _orig[i] then return end
+            local e = {Transparency = i.Transparency}
+            if i:IsA("ParticleEmitter") then
+                e.Rate = i.Rate
+                i.Rate = i.Rate * CONFIG.particleScale
+            end
+            i.Transparency = math.max(i.Transparency, 0.2)
+            _orig[i] = e
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    i.Transparency = o.Transparency
+                    if o.Rate then i.Rate = o.Rate end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [2] = {
-        name = "Optimizaci贸n de Mallas y Texturas Ligeras",
-        apply = function(instance)
-            if instance:IsA("MeshPart") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {RenderFidelity = instance.RenderFidelity, LODX = instance.LODX, LODY = instance.LODY}
-                end
-                instance.RenderFidelity = Enum.RenderFidelity.Performance
-                instance.LODX = Enum.LevelOfDetail.Coarse
-                instance.LODY = Enum.LevelOfDetail.Coarse
-                table.insert(_trackedMeshParts, instance)
-            elseif instance:IsA("FaceInstance") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Transparency = instance.Transparency}
-                end
-                instance.Transparency = math.max(instance.Transparency, 0.2) -- Ligeramente transparentes
-                table.insert(_trackedFaceInstances, instance)
-            elseif instance:IsA("ShirtGraphic") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Transparency = instance.Transparency}
-                end
-                instance.Transparency = math.max(instance.Transparency, 0.2) -- Ligeramente transparentes
-                table.insert(_trackedShirtGraphics, instance)
-            end
+        tracked = {},
+        check   = function(i)
+            return i:IsA("MeshPart") or i:IsA("FaceInstance") or i:IsA("ShirtGraphic")
         end,
-        revert = function(instance)
-            if instance:IsA("MeshPart") then
-                local orig = _originalValues[instance]
-                if orig then
-                    instance.RenderFidelity = orig.RenderFidelity
-                    instance.LODX = orig.LODX
-                    instance.LODY = orig.LODY
-                end
-            elseif instance:IsA("FaceInstance") then
-                local orig = _originalValues[instance]
-                if orig then instance.Transparency = orig.Transparency end
-            elseif instance:IsA("ShirtGraphic") then
-                local orig = _originalValues[instance]
-                if orig then instance.Transparency = orig.Transparency end
-            end
-        end,
-        check = function(instance) return instance:IsA("MeshPart") or instance:IsA("FaceInstance") or instance:IsA("ShirtGraphic") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedMeshParts,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("MeshPart") then
+                _orig[i] = {RenderFidelity = i.RenderFidelity, LODX = i.LODX, LODY = i.LODY}
+                i.RenderFidelity = Enum.RenderFidelity.Performance
+                i.LODX = Enum.LevelOfDetail.Coarse
+                i.LODY = Enum.LevelOfDetail.Coarse
+            else
+                _orig[i] = {Transparency = i.Transparency}
+                i.Transparency = math.max(i.Transparency, 0.2)
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("MeshPart") then
+                        i.RenderFidelity = o.RenderFidelity
+                        i.LODX = o.LODX
+                        i.LODY = o.LODY
+                    else
+                        i.Transparency = o.Transparency
+                    end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [3] = {
-        name = "Desactivaci贸n de Sombras y Reducci贸n de Volumen de Sonido",
-        apply = function(instance)
-            if instance:IsA("Light") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Shadows = instance.Shadows}
-                end
-                instance.Shadows = false -- Desactivar sombras
-                table.insert(_trackedLights, instance)
-            elseif instance:IsA("Sound") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Volume = instance.Volume}
-                end
-                instance.Volume = instance.Volume * CONFIG.soundVolumeReduction -- Reducir volumen
-                table.insert(_trackedSounds, instance)
-            end
-        end,
-        revert = function(instance)
-            if instance:IsA("Light") then
-                local orig = _originalValues[instance]
-                if orig then instance.Shadows = orig.Shadows end
-            elseif instance:IsA("Sound") then
-                local orig = _originalValues[instance]
-                if orig then instance.Volume = orig.Volume end
-            end
-        end,
-        check = function(instance) return instance:IsA("Light") or instance:IsA("Sound") end,
+        tracked = {},
+        check   = function(i) return i:IsA("Light") or i:IsA("Sound") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedLights,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("Light") then
+                _orig[i] = {Shadows = i.Shadows}
+                i.Shadows = false
+            else
+                _orig[i] = {Volume = i.Volume}
+                i.Volume = i.Volume * CONFIG.soundVolumeReduction
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("Light") then i.Shadows = o.Shadows
+                    else i.Volume = o.Volume end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [4] = {
-        name = "Transparencia Sutil de Calcoman铆as y Texturas",
-        apply = function(instance)
-            if instance:IsA("Decal") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Transparency = instance.Transparency}
-                end
-                instance.Transparency = math.max(instance.Transparency, CONFIG.decalTransparency) -- Aumentar transparencia
-                table.insert(_trackedDecals, instance)
-            elseif instance:IsA("Texture") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Transparency = instance.Transparency}
-                end
-                instance.Transparency = math.max(instance.Transparency, CONFIG.textureTransparency) -- Aumentar transparencia
-                table.insert(_trackedTextures, instance)
-            end
-        end,
-        revert = function(instance)
-            if instance:IsA("Decal") then
-                local orig = _originalValues[instance]
-                if orig then instance.Transparency = orig.Transparency end
-            elseif instance:IsA("Texture") then
-                local orig = _originalValues[instance]
-                if orig then instance.Transparency = orig.Transparency end
-            end
-        end,
-        check = function(instance) return instance:IsA("Decal") or instance:IsA("Texture") end,
+        tracked = {},
+        check   = function(i) return i:IsA("Decal") or i:IsA("Texture") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedDecals,
+        apply = function(t, i)
+            if _orig[i] then return end
+            local threshold = i:IsA("Decal") and CONFIG.decalTransparency or CONFIG.textureTransparency
+            _orig[i] = {Transparency = i.Transparency}
+            i.Transparency = math.max(i.Transparency, threshold)
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then i.Transparency = o.Transparency; _orig[i] = nil end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [5] = {
-        name = "Optimizaci贸n de Partes y Explosiones Moderada",
-        apply = function(instance)
-            if instance:IsA("BasePart") and not instance:IsA("MeshPart") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {CastShadow = instance.CastShadow, Reflectance = instance.Reflectance}
-                end
-                instance.CastShadow = false -- Desactivar sombras de partes
-                instance.Reflectance = math.min(instance.Reflectance, 0.1) -- Reducir reflectancia
-                table.insert(_trackedParts, instance)
-            elseif instance:IsA("Explosion") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {BlastPressure = instance.BlastPressure, BlastRadius = instance.BlastRadius, Visible = instance.Visible, Transparency = instance.Transparency}
-                end
-                instance.BlastPressure = instance.BlastPressure * CONFIG.explosionScale
-                instance.BlastRadius = instance.BlastRadius * CONFIG.explosionScale
-                instance.Transparency = math.max(instance.Transparency, CONFIG.explosionTransparency) -- Hacerlas m谩s transparentes
-                table.insert(_trackedExplosions, instance)
-            end
+        tracked = {},
+        check   = function(i)
+            return (i:IsA("BasePart") and not i:IsA("MeshPart")) or i:IsA("Explosion")
         end,
-        revert = function(instance)
-            if instance:IsA("BasePart") and not instance:IsA("MeshPart") then
-                local orig = _originalValues[instance]
-                if orig then
-                    instance.CastShadow = orig.CastShadow
-                    instance.Reflectance = orig.Reflectance
-                end
-            elseif instance:IsA("Explosion") then
-                local orig = _originalValues[instance]
-                if orig then
-                    instance.BlastPressure = orig.BlastPressure
-                    instance.BlastRadius = orig.BlastRadius
-                    instance.Visible = orig.Visible
-                    instance.Transparency = orig.Transparency
-                end
-            end
-        end,
-        check = function(instance) return (instance:IsA("BasePart") and not instance:IsA("MeshPart")) or instance:IsA("Explosion") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedParts,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("Explosion") then
+                _orig[i] = {BlastPressure = i.BlastPressure, BlastRadius = i.BlastRadius, Transparency = i.Transparency}
+                i.BlastPressure = i.BlastPressure * CONFIG.explosionScale
+                i.BlastRadius   = i.BlastRadius   * CONFIG.explosionScale
+                i.Transparency  = math.max(i.Transparency, CONFIG.explosionTransparency)
+            else
+                _orig[i] = {CastShadow = i.CastShadow, Reflectance = i.Reflectance}
+                i.CastShadow  = false
+                i.Reflectance = math.min(i.Reflectance, 0.1)
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("Explosion") then
+                        i.BlastPressure = o.BlastPressure
+                        i.BlastRadius   = o.BlastRadius
+                        i.Transparency  = o.Transparency
+                    else
+                        i.CastShadow  = o.CastShadow
+                        i.Reflectance = o.Reflectance
+                    end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [6] = {
-        name = "Eliminaci贸n de Ropa y Efectos Post-Procesado (Dr谩stico)",
-        apply = function(instance)
-            if instance:IsA("Clothing") or instance:IsA("SurfaceAppearance") or instance:IsA("BaseWrap") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Parent = instance.Parent}
-                end
-                instance.Parent = Debris -- Mover a Debris para eliminaci贸n eventual
-                table.insert(_trackedClothing, instance)
-            elseif instance:IsA("PostEffect") then
-                if not _originalValues[instance] then
-                    _originalValues[instance] = {Enabled = instance.Enabled}
-                end
-                instance.Enabled = false
-                table.insert(_trackedPostEffects, instance)
-            end
+        tracked = {},
+        check   = function(i)
+            return i:IsA("Clothing") or i:IsA("SurfaceAppearance") or i:IsA("BaseWrap") or i:IsA("PostEffect")
         end,
-        revert = function(instance)
-            if instance:IsA("Clothing") or instance:IsA("SurfaceAppearance") or instance:IsA("BaseWrap") then
-                local orig = _originalValues[instance]
-                if orig and orig.Parent then
-                    instance.Parent = orig.Parent
-                end
-            elseif instance:IsA("PostEffect") then
-                local orig = _originalValues[instance]
-                if orig then instance.Enabled = orig.Enabled end
-            end
-        end,
-        check = function(instance) return (instance:IsA("Clothing") or instance:IsA("SurfaceAppearance") or instance:IsA("BaseWrap")) or instance:IsA("PostEffect") end,
         collect = function() return Workspace:GetDescendants() end,
-        trackedList = _trackedClothing,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("PostEffect") then
+                _orig[i] = {Enabled = i.Enabled}
+                i.Enabled = false
+            else
+                _orig[i] = {Parent = i.Parent}
+                i.Parent = Debris
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("PostEffect") then i.Enabled = o.Enabled
+                    elseif o.Parent then i.Parent = o.Parent end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
     [7] = {
-        name = "Configuraci贸n de Renderizado Extrema y FOV/FarPlane (Dr谩stico)",
-        apply = function()
-            -- Aplicar a la c谩mara
-            local camera = Workspace.CurrentCamera
-            if not _originalValues.Camera then
-                _originalValues.Camera = {FieldOfView = camera.FieldOfView, FarPlane = camera.FarPlane}
-            end
-            camera.FieldOfView = math.max(CONFIG.minFOV, camera.FieldOfView - CONFIG.fovReduction)
-            camera.FarPlane = CONFIG.farPlaneTarget
-
-            -- Aplicar a la configuraci贸n de renderizado
-            if not _originalValues.Rendering then
-                _originalValues.Rendering = {QualityLevel = settings().Rendering.QualityLevel, MeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel}
-            end
-            settings().Rendering.QualityLevel = Enum.QualityLevel.Level1
-            settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
-
-            -- Aplicar a MaterialService
-            if not _originalValues.MaterialService then
-                _originalValues.MaterialService = {Use2022Materials = MaterialService.Use2022Materials, Materials = {}}
-                for _, mat in pairs(MaterialService:GetChildren()) do
-                    _originalMaterialServiceMaterials[mat] = true
-                end
-            end
-            MaterialService.Use2022Materials = false
-            for _, mat in pairs(MaterialService:GetChildren()) do
-                mat:Destroy()
-            end
-
-            -- Aplicar a Humanoids (desactivar accesorios y distancia de renderizado)
-            for _, player in ipairs(Players:GetPlayers()) do
-                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    if not _originalValues[humanoid] then
-                        _originalValues[humanoid] = {DisplayDistanceType = humanoid.DisplayDistanceType}
-                    end
-                    humanoid.DisplayDistanceType = Enum.DisplayDistanceType.None
-                    table.insert(_trackedHumanoids, humanoid)
-
-                    local humanoidDescription = player.Character and player.Character:FindFirstChildOfClass("HumanoidDescription")
-                    if humanoidDescription then
-                        if not _originalValues[humanoidDescription] then
-                            _originalValues[humanoidDescription] = {
-                                HatAccessory = humanoidDescription.HatAccessory,
-                                HairAccessory = humanoidDescription.HairAccessory,
-                                FaceAccessory = humanoidDescription.FaceAccessory,
-                                NeckAccessory = humanoidDescription.NeckAccessory,
-                                ShoulderAccessory = humanoidDescription.ShoulderAccessory,
-                                FrontAccessory = humanoidDescription.FrontAccessory,
-                                BackAccessory = humanoidDescription.BackAccessory,
-                                WaistAccessory = humanoidDescription.WaistAccessory,
-                            }
-                        end
-                        humanoidDescription.HatAccessory = "0"
-                        humanoidDescription.HairAccessory = "0"
-                        humanoidDescription.FaceAccessory = "0"
-                        humanoidDescription.NeckAccessory = "0"
-                        humanoidDescription.ShoulderAccessory = "0"
-                        humanoidDescription.FrontAccessory = "0"
-                        humanoidDescription.BackAccessory = "0"
-                        humanoidDescription.WaistAccessory = "0"
-                    end
-                end
-            end
-        end,
-        revert = function()
-            local camera = Workspace.CurrentCamera
-            local origCamera = _originalValues.Camera
-            if origCamera then
-                camera.FieldOfView = origCamera.FieldOfView
-                camera.FarPlane = origCamera.FarPlane
-            end
-
-            local origRendering = _originalValues.Rendering
-            if origRendering then
-                settings().Rendering.QualityLevel = origRendering.QualityLevel
-                settings().Rendering.MeshPartDetailLevel = origRendering.MeshPartDetailLevel
-            end
-
-            local origMaterialService = _originalValues.MaterialService
-            if origMaterialService then
-                MaterialService.Use2022Materials = origMaterialService.Use2022Materials
-                for mat in pairs(_originalMaterialServiceMaterials) do
-                    if mat and not mat.Parent then
-                        mat.Parent = MaterialService
-                    end
-                end
-            end
-
-            for _, humanoid in ipairs(_trackedHumanoids) do
-                local orig = _originalValues[humanoid]
-                if orig then humanoid.DisplayDistanceType = orig.DisplayDistanceType end
-                local humanoidDescription = humanoid.Parent and humanoid.Parent:FindFirstChildOfClass("HumanoidDescription")
-                if humanoidDescription then
-                    local origDesc = _originalValues[humanoidDescription]
-                    if origDesc then
-                        humanoidDescription.HatAccessory = origDesc.HatAccessory
-                        humanoidDescription.HairAccessory = origDesc.HairAccessory
-                        humanoidDescription.FaceAccessory = origDesc.FaceAccessory
-                        humanoidDescription.NeckAccessory = origDesc.NeckAccessory
-                        humanoidDescription.ShoulderAccessory = origDesc.ShoulderAccessory
-                        humanoidDescription.FrontAccessory = origDesc.FrontAccessory
-                        humanoidDescription.BackAccessory = origDesc.BackAccessory
-                        humanoidDescription.WaistAccessory = origDesc.WaistAccessory
-                    end
-                end
-            end
-        end,
-        check = function(instance) return false end, -- Este tier se aplica globalmente, no a instancias individuales din谩micamente
+        tracked = {},
+        check   = function() return false end,
         collect = function() return {} end,
-        trackedList = {},
+        apply = function(t)
+            local cam = Workspace.CurrentCamera
+            if not _orig.Camera then
+                _orig.Camera = {FieldOfView = cam.FieldOfView, FarPlane = cam.FarPlane}
+                cam.FieldOfView = math.max(CONFIG.minFOV, cam.FieldOfView - CONFIG.fovReduction)
+                cam.FarPlane    = CONFIG.farPlaneTarget
+            end
+
+            if not _orig.Rendering then
+                _orig.Rendering = {
+                    QualityLevel        = settings().Rendering.QualityLevel,
+                    MeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel,
+                }
+                settings().Rendering.QualityLevel        = Enum.QualityLevel.Level1
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+            end
+
+            if not _orig.Materials then
+                _orig.Materials = {Use2022 = MaterialService.Use2022Materials, list = {}}
+                for _, m in pairs(MaterialService:GetChildren()) do
+                    _orig.Materials.list[m] = true
+                end
+                MaterialService.Use2022Materials = false
+                for _, m in pairs(MaterialService:GetChildren()) do
+                    m:Destroy()
+                end
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                local char = player.Character
+                if not char then continue() end
+
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and not _orig[hum] then
+                    _orig[hum] = {DisplayDistanceType = hum.DisplayDistanceType}
+                    hum.DisplayDistanceType = Enum.DisplayDistanceType.None
+                    table.insert(t.tracked, hum)
+                end
+
+                local desc = char:FindFirstChildOfClass("HumanoidDescription")
+                if desc and not _orig[desc] then
+                    _orig[desc] = {
+                        HatAccessory      = desc.HatAccessory,
+                        HairAccessory     = desc.HairAccessory,
+                        FaceAccessory     = desc.FaceAccessory,
+                        NeckAccessory     = desc.NeckAccessory,
+                        ShoulderAccessory = desc.ShoulderAccessory,
+                        FrontAccessory    = desc.FrontAccessory,
+                        BackAccessory     = desc.BackAccessory,
+                        WaistAccessory    = desc.WaistAccessory,
+                    }
+                    desc.HatAccessory      = "0"
+                    desc.HairAccessory     = "0"
+                    desc.FaceAccessory     = "0"
+                    desc.NeckAccessory     = "0"
+                    desc.ShoulderAccessory = "0"
+                    desc.FrontAccessory    = "0"
+                    desc.BackAccessory     = "0"
+                    desc.WaistAccessory    = "0"
+                    table.insert(t.tracked, desc)
+                end
+            end
+        end,
+        revert = function(t)
+            if _orig.Camera then
+                local cam = Workspace.CurrentCamera
+                cam.FieldOfView = _orig.Camera.FieldOfView
+                cam.FarPlane    = _orig.Camera.FarPlane
+                _orig.Camera = nil
+            end
+            if _orig.Rendering then
+                settings().Rendering.QualityLevel        = _orig.Rendering.QualityLevel
+                settings().Rendering.MeshPartDetailLevel = _orig.Rendering.MeshPartDetailLevel
+                _orig.Rendering = nil
+            end
+            if _orig.Materials then
+                MaterialService.Use2022Materials = _orig.Materials.Use2022
+                for m in pairs(_orig.Materials.list) do
+                    if m and m.Parent == nil then m.Parent = MaterialService end
+                end
+                _orig.Materials = nil
+            end
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("Humanoid") then
+                        i.DisplayDistanceType = o.DisplayDistanceType
+                    elseif i:IsA("HumanoidDescription") then
+                        i.HatAccessory      = o.HatAccessory
+                        i.HairAccessory     = o.HairAccessory
+                        i.FaceAccessory     = o.FaceAccessory
+                        i.NeckAccessory     = o.NeckAccessory
+                        i.ShoulderAccessory = o.ShoulderAccessory
+                        i.FrontAccessory    = o.FrontAccessory
+                        i.BackAccessory     = o.BackAccessory
+                        i.WaistAccessory    = o.WaistAccessory
+                    end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
     },
 }
 
--- FUNCIONES INTERNAS
-local function applyTier(tierNum, instance)
-    local tier = TIERS[tierNum]
-    if tier and tier.apply then
-        if tier.check(instance) then
-            tier.apply(instance)
-        elseif tierNum == 7 and not instance then -- Tier 7 es global
-            tier.apply()
-        end
+local function notify(n, dir)
+    if type(CONFIG.onTierChange) == "function" then
+        CONFIG.onTierChange(n, dir)
     end
 end
 
-local function revertTier(tierNum, instance)
-    local tier = TIERS[tierNum]
-    if tier and tier.revert then
-        if tier.check(instance) then
-            tier.revert(instance)
-        elseif tierNum == 7 and not instance then -- Tier 7 es global
-            tier.revert()
-        end
-    end
-end
-
-local function applyAllTiersUpTo(targetTier)
-    for i = 1, targetTier do
-        local tier = TIERS[i]
-        if tier then
-            if i == 7 then -- Tier 7 es global
-                tier.apply()
+local function setTier(n)
+    n = math.clamp(math.floor(n), 0, CONFIG.maxTier)
+    if n == _tier then return end
+    local old = _tier
+    _tier = n
+    if n > old then
+        for i = old + 1, n do
+            local t = TIERS[i]
+            if not t then continue() end
+            if i == 7 then
+                t.apply(t)
             else
-                for _, instance in ipairs(tier.collect()) do
-                    applyTier(i, instance)
+                for _, inst in ipairs(t.collect()) do
+                    if t.check(inst) then t.apply(t, inst) end
                 end
             end
+            notify(i, "up")
+        end
+    else
+        for i = old, n + 1, -1 do
+            local t = TIERS[i]
+            if t then t.revert(t) end
+            notify(i - 1, "down")
         end
     end
 end
 
-local function revertAllTiersFrom(startTier)
-    for i = startTier, 1, -1 do
-        local tier = TIERS[i]
-        if tier then
-            if i == 7 then -- Tier 7 es global
-                tier.revert()
-            else
-                for _, instance in ipairs(tier.trackedList) do
-                    revertTier(i, instance)
-                end
-            end
-        end
+local function onAdded(inst)
+    if not _running then return end
+    for i = 1, _tier do
+        local t = TIERS[i]
+        if t and i ~= 7 and t.check(inst) then t.apply(t, inst) end
     end
 end
 
-local function updateTier(newTier, direction)
-    if newTier == _currentTier then return end
-
-    local oldTier = _currentTier
-    _currentTier = math.clamp(newTier, 0, CONFIG.maxTier)
-
-    if _currentTier > oldTier then
-        for i = oldTier + 1, _currentTier do
-            local tier = TIERS[i]
-            if tier then
-                if i == 7 then
-                    tier.apply()
-                else
-                    for _, instance in ipairs(tier.collect()) do
-                        applyTier(i, instance)
-                    end
-                end
-            end
-            if type(CONFIG.onTierChange) == "function" then
-                CONFIG.onTierChange(i, "up")
-            end
-        end
-    elseif _currentTier < oldTier then
-        for i = oldTier, _currentTier + 1, -1 do
-            local tier = TIERS[i]
-            if tier then
-                if i == 7 then
-                    tier.revert()
-                else
-                    for _, instance in ipairs(tier.trackedList) do
-                        revertTier(i, instance)
-                    end
-                end
-            end
-            if type(CONFIG.onTierChange) == "function" then
-                CONFIG.onTierChange(i - 1, "down") -- Notificar el tier al que se baja
-            end
-        end
-    end
-end
-
-local function onDescendantAdded(instance)
-    if not _isRunning then return end
-    for i = 1, _currentTier do
-        applyTier(i, instance)
-    end
-end
-
--- API P脷BLICA
-
-function OPT.Init(userConfig)
-    if _isRunning then
-        return false, "Optimizer is already running. Disable it first to change configuration."
-    end
-    for k, v in pairs(userConfig) do
-        if CONFIG[k] ~= nil then
-            CONFIG[k] = v
-        else
-            return false, "Invalid configuration key: " .. k
-        end
+function OPT.Init(cfg)
+    if _running then return false, "already running" end
+    for k, v in pairs(cfg) do
+        if CONFIG[k] == nil then return false, "invalid key: " .. k end
+        CONFIG[k] = v
     end
     return true
 end
 
 function OPT.Enable()
-    if _isRunning then return end
-    _isRunning = true
+    if _running then return end
+    _running    = true
+    _lastSample = tick()
 
-    -- Capturar valores originales globales si no se han capturado ya
-    _originalCameraFOV = game.Workspace.CurrentCamera.FieldOfView
-    _originalCameraFarPlane = game.Workspace.CurrentCamera.FarPlane
-    _originalRenderingQualityLevel = settings().Rendering.QualityLevel
-    _originalRenderingMeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel
-    _originalMaterialServiceUse2022Materials = MaterialService.Use2022Materials
-    _originalMaterialServiceMaterials = {}
-    for _, mat in pairs(MaterialService:GetChildren()) do
-        _originalMaterialServiceMaterials[mat] = true
-    end
+    _events.Added = Workspace.DescendantAdded:Connect(onAdded)
+    _events.Stepped = RunService.RenderStepped:Connect(function(dt)
+        table.insert(_fpsSamples, 1 / dt)
+        if #_fpsSamples > 60 then table.remove(_fpsSamples, 1) end
 
-    -- Aplicar el tier actual a todos los descendientes existentes
-    applyAllTiersUpTo(_currentTier)
+        local now = tick()
+        if now - _lastSample < CONFIG.sampleInterval then return end
+        _lastSample = now
 
-    -- Conectar a DescendantAdded para nuevos objetos
-    _connectedEvents.DescendantAdded = Workspace.DescendantAdded:Connect(onDescendantAdded)
+        local sum = 0
+        for _, v in ipairs(_fpsSamples) do sum = sum + v end
+        _fpsAvg = sum / #_fpsSamples
 
-    -- Iniciar el loop de sampling de FPS
-    _lastSampleTime = tick()
-    _connectedEvents.RenderStepped = RunService.RenderStepped:Connect(function(deltaTime)
-        _fpsCounter = _fpsCounter + 1
-        table.insert(_fpsSamples, 1 / deltaTime)
-        if #_fpsSamples > 60 then
-            table.remove(_fpsSamples, 1)
-        end
-
-        local currentTime = tick()
-        if currentTime - _lastSampleTime >= CONFIG.sampleInterval then
-            _lastSampleTime = currentTime
-
-            local sumFPS = 0
-            for _, fps in ipairs(_fpsSamples) do
-                sumFPS = sumFPS + fps
+        if _fpsAvg < CONFIG.targetFPS then
+            _downCount = 0
+            _upCount  = _upCount + 1
+            if _upCount >= CONFIG.confirmSamples and _tier < CONFIG.maxTier then
+                _upCount = 0
+                setTier(_tier + 1)
             end
-            _fpsAverage = sumFPS / #_fpsSamples
-
-            if _fpsAverage < CONFIG.targetFPS then
-                _tierUpCounter = _tierUpCounter + 1
-                _tierDownCounter = 0
-                if _tierUpCounter >= CONFIG.confirmSamples then
-                    _tierUpCounter = 0
-                    if _currentTier < CONFIG.maxTier then
-                        updateTier(_currentTier + 1, "up")
-                    end
-                end
-            elseif _fpsAverage > CONFIG.targetFPS + CONFIG.recoverMargin then
-                _tierDownCounter = _tierDownCounter + 1
-                _tierUpCounter = 0
-                if _tierDownCounter >= CONFIG.confirmSamples then
-                    _tierDownCounter = 0
-                    if _currentTier > 0 then
-                        updateTier(_currentTier - 1, "down")
-                    end
-                end
-            else
-                _tierUpCounter = 0
-                _tierDownCounter = 0
+        elseif _fpsAvg > CONFIG.targetFPS + CONFIG.recoverMargin then
+            _upCount    = 0
+            _downCount = _downCount + 1
+            if _downCount >= CONFIG.confirmSamples and _tier > 0 then
+                _downCount = 0
+                setTier(_tier - 1)
             end
+        else
+            _upCount   = 0
+            _downCount = 0
         end
     end)
 end
 
 function OPT.Disable()
-    if not _isRunning then return end
-    _isRunning = false
+    if not _running then return end
+    _running = false
 
-    -- Desconectar eventos
-    for _, connection in pairs(_connectedEvents) do
-        connection:Disconnect()
-    end
-    _connectedEvents = {}
+    for _, c in pairs(_events) do c:Disconnect() end
+    _events = {}
 
-    -- Revertir todos los tiers aplicados
-    revertAllTiersFrom(_currentTier)
-
-    -- Restaurar valores originales globales
-    local camera = Workspace.CurrentCamera
-    camera.FieldOfView = _originalCameraFOV
-    camera.FarPlane = _originalCameraFarPlane
-    settings().Rendering.QualityLevel = _originalRenderingQualityLevel
-    settings().Rendering.MeshPartDetailLevel = _originalRenderingMeshPartDetailLevel
-    MaterialService.Use2022Materials = _originalMaterialServiceUse2022Materials
-    for mat in pairs(_originalMaterialServiceMaterials) do
-        if mat and not mat.Parent then
-            mat.Parent = MaterialService
-        end
-    end
-
-    -- Limpiar listas de objetos rastreados y valores originales
-    _trackedEmitters = {}
-    _trackedTrails = {}
-    _trackedLights = {}
-    _trackedDecals = {}
-    _trackedTextures = {}
-    _trackedSounds = {}
-    _trackedHumanoids = {}
-    _trackedParts = {}
-    _trackedMeshParts = {}
-    _trackedFaceInstances = {}
-    _trackedShirtGraphics = {}
-    _trackedPostEffects = {}
-    _trackedExplosions = {}
-    _trackedClothing = {}
-    _originalValues = {}
-
-    -- Resetear contadores de FPS y tiers
+    setTier(0)
+    _orig      = {}
     _fpsSamples = {}
-    _fpsCounter = 0
-    _fpsAverage = 0
-    _lastSampleTime = 0
-    _tierUpCounter = 0
-    _tierDownCounter = 0
-    _currentTier = 0
+    _fpsAvg    = 0
+    _upCount   = 0
+    _downCount = 0
 end
 
 function OPT.Toggle()
-    if _isRunning then
-        OPT.Disable()
-        return false
-    else
-        OPT.Enable()
-        return true
-    end
+    if _running then OPT.Disable() return false end
+    OPT.Enable()
+    return true
 end
 
-function OPT.IsRunning()
-    return _isRunning
-end
-
-function OPT.GetTier()
-    return _currentTier
-end
-
-function OPT.GetFPS()
-    return _fpsAverage
-}
+function OPT.IsRunning() return _running end
+function OPT.GetTier()   return _tier    end
+function OPT.GetFPS()    return _fpsAvg  end
 
 function OPT.GetConfig()
-    local configCopy = {}
-    for k, v in pairs(CONFIG) do
-        configCopy[k] = v
-    end
-    return configCopy
+    local copy = {}
+    for k, v in pairs(CONFIG) do copy[k] = v end
+    return copy
 end
 
-function OPT.SetTier(n)
-    local clampedTier = math.clamp(math.floor(n), 0, CONFIG.maxTier)
-    if clampedTier == _currentTier then return end
-
-    local oldTier = _currentTier
-    _currentTier = clampedTier
-
-    if _currentTier > oldTier then
-        for i = oldTier + 1, _currentTier do
-            local tier = TIERS[i]
-            if tier then
-                if i == 7 then
-                    tier.apply()
-                else
-                    for _, instance in ipairs(tier.collect()) do
-                        applyTier(i, instance)
-                    end
-                end
-            end
-            if type(CONFIG.onTierChange) == "function" then
-                CONFIG.onTierChange(i, "up")
-            end
-        end
-    elseif _currentTier < oldTier then
-        for i = oldTier, _currentTier + 1, -1 do
-            local tier = TIERS[i]
-            if tier then
-                if i == 7 then
-                    tier.revert()
-                else
-                    for _, instance in ipairs(tier.trackedList) do
-                        revertTier(i, instance)
-                    end
-                end
-            end
-            if type(CONFIG.onTierChange) == "function" then
-                CONFIG.onTierChange(i - 1, "down") -- Notificar el tier al que se baja
-            end
-        end
-    end
-end
+function OPT.SetTier(n) setTier(n) end
 
 return OPT
