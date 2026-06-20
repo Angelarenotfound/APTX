@@ -1,21 +1,22 @@
 local OPT = {}
 
 local CONFIG = {
-    targetFPS            = 60,
-    recoverMargin        = 10,
-    sampleInterval       = 1,
-    confirmSamples       = 3,
-    particleScale        = 0.6,
-    fovReduction         = 8,
-    farPlaneTarget       = 350,
-    maxTier              = 7,
-    minFOV               = 50,
-    decalTransparency    = 0.5,
-    textureTransparency  = 0.5,
-    soundVolumeReduction = 0.5,
-    explosionScale       = 0.5,
+    targetFPS             = 60,
+    recoverMargin         = 10,
+    sampleInterval        = 1,
+    confirmSamples        = 3,
+    particleScale         = 0.6,
+    fovReduction          = 8,
+    farPlaneTarget        = 350,
+    maxTier               = 7,
+    minFOV                = 50,
+    decalTransparency     = 0.5,
+    textureTransparency   = 0.5,
+    soundVolumeReduction  = 0.5,
+    explosionScale        = 0.5,
     explosionTransparency = 0.5,
-    onTierChange         = nil,
+    directory             = nil,
+    onTierChange          = nil,
 }
 
 local _running = false
@@ -35,184 +36,13 @@ local Workspace       = game:GetService("Workspace")
 local MaterialService = game:GetService("MaterialService")
 local Debris          = game:GetService("Debris")
 
+local function dir()
+    return CONFIG.directory or Workspace
+end
+
 local TIERS = {
+    -- Tier 1: más agresivo — cámara, render global, materiales, accesorios
     [1] = {
-        tracked = {},
-        check   = function(i) return i:IsA("ParticleEmitter") or i:IsA("Trail") end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            local e = {Transparency = i.Transparency}
-            if i:IsA("ParticleEmitter") then
-                e.Rate = i.Rate
-                i.Rate = i.Rate * CONFIG.particleScale
-            end
-            i.Transparency = math.max(i.Transparency, 0.2)
-            _orig[i] = e
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then
-                    i.Transparency = o.Transparency
-                    if o.Rate then i.Rate = o.Rate end
-                    _orig[i] = nil
-                end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [2] = {
-        tracked = {},
-        check   = function(i)
-            return i:IsA("MeshPart") or i:IsA("FaceInstance") or i:IsA("ShirtGraphic")
-        end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            if i:IsA("MeshPart") then
-                _orig[i] = {RenderFidelity = i.RenderFidelity, LODX = i.LODX, LODY = i.LODY}
-                i.RenderFidelity = Enum.RenderFidelity.Performance
-                i.LODX = Enum.LevelOfDetail.Coarse
-                i.LODY = Enum.LevelOfDetail.Coarse
-            else
-                _orig[i] = {Transparency = i.Transparency}
-                i.Transparency = math.max(i.Transparency, 0.2)
-            end
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then
-                    if i:IsA("MeshPart") then
-                        i.RenderFidelity = o.RenderFidelity
-                        i.LODX = o.LODX
-                        i.LODY = o.LODY
-                    else
-                        i.Transparency = o.Transparency
-                    end
-                    _orig[i] = nil
-                end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [3] = {
-        tracked = {},
-        check   = function(i) return i:IsA("Light") or i:IsA("Sound") end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            if i:IsA("Light") then
-                _orig[i] = {Shadows = i.Shadows}
-                i.Shadows = false
-            else
-                _orig[i] = {Volume = i.Volume}
-                i.Volume = i.Volume * CONFIG.soundVolumeReduction
-            end
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then
-                    if i:IsA("Light") then i.Shadows = o.Shadows
-                    else i.Volume = o.Volume end
-                    _orig[i] = nil
-                end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [4] = {
-        tracked = {},
-        check   = function(i) return i:IsA("Decal") or i:IsA("Texture") end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            local threshold = i:IsA("Decal") and CONFIG.decalTransparency or CONFIG.textureTransparency
-            _orig[i] = {Transparency = i.Transparency}
-            i.Transparency = math.max(i.Transparency, threshold)
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then i.Transparency = o.Transparency; _orig[i] = nil end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [5] = {
-        tracked = {},
-        check   = function(i)
-            return (i:IsA("BasePart") and not i:IsA("MeshPart")) or i:IsA("Explosion")
-        end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            if i:IsA("Explosion") then
-                _orig[i] = {BlastPressure = i.BlastPressure, BlastRadius = i.BlastRadius, Transparency = i.Transparency}
-                i.BlastPressure = i.BlastPressure * CONFIG.explosionScale
-                i.BlastRadius   = i.BlastRadius   * CONFIG.explosionScale
-                i.Transparency  = math.max(i.Transparency, CONFIG.explosionTransparency)
-            else
-                _orig[i] = {CastShadow = i.CastShadow, Reflectance = i.Reflectance}
-                i.CastShadow  = false
-                i.Reflectance = math.min(i.Reflectance, 0.1)
-            end
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then
-                    if i:IsA("Explosion") then
-                        i.BlastPressure = o.BlastPressure
-                        i.BlastRadius   = o.BlastRadius
-                        i.Transparency  = o.Transparency
-                    else
-                        i.CastShadow  = o.CastShadow
-                        i.Reflectance = o.Reflectance
-                    end
-                    _orig[i] = nil
-                end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [6] = {
-        tracked = {},
-        check   = function(i)
-            return i:IsA("Clothing") or i:IsA("SurfaceAppearance") or i:IsA("BaseWrap") or i:IsA("PostEffect")
-        end,
-        collect = function() return Workspace:GetDescendants() end,
-        apply = function(t, i)
-            if _orig[i] then return end
-            if i:IsA("PostEffect") then
-                _orig[i] = {Enabled = i.Enabled}
-                i.Enabled = false
-            else
-                _orig[i] = {Parent = i.Parent}
-                i.Parent = Debris
-            end
-            table.insert(t.tracked, i)
-        end,
-        revert = function(t)
-            for _, i in ipairs(t.tracked) do
-                local o = _orig[i]
-                if o then
-                    if i:IsA("PostEffect") then i.Enabled = o.Enabled
-                    elseif o.Parent then i.Parent = o.Parent end
-                    _orig[i] = nil
-                end
-            end
-            table.clear(t.tracked)
-        end,
-    },
-    [7] = {
         tracked = {},
         check   = function() return false end,
         collect = function() return {} end,
@@ -319,11 +149,193 @@ local TIERS = {
             table.clear(t.tracked)
         end,
     },
+    -- Tier 2: ropa, apariencias, post-efectos
+    [2] = {
+        tracked = {},
+        check   = function(i)
+            return i:IsA("Clothing") or i:IsA("SurfaceAppearance") or i:IsA("BaseWrap") or i:IsA("PostEffect")
+        end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("PostEffect") then
+                _orig[i] = {Enabled = i.Enabled}
+                i.Enabled = false
+            else
+                _orig[i] = {Parent = i.Parent}
+                i.Parent = Debris
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("PostEffect") then i.Enabled = o.Enabled
+                    elseif o.Parent then i.Parent = o.Parent end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
+    },
+    -- Tier 3: partes base y explosiones
+    [3] = {
+        tracked = {},
+        check   = function(i)
+            return (i:IsA("BasePart") and not i:IsA("MeshPart")) or i:IsA("Explosion")
+        end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("Explosion") then
+                _orig[i] = {BlastPressure = i.BlastPressure, BlastRadius = i.BlastRadius, Transparency = i.Transparency}
+                i.BlastPressure = i.BlastPressure * CONFIG.explosionScale
+                i.BlastRadius   = i.BlastRadius   * CONFIG.explosionScale
+                i.Transparency  = math.max(i.Transparency, CONFIG.explosionTransparency)
+            else
+                _orig[i] = {CastShadow = i.CastShadow, Reflectance = i.Reflectance}
+                i.CastShadow  = false
+                i.Reflectance = math.min(i.Reflectance, 0.1)
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("Explosion") then
+                        i.BlastPressure = o.BlastPressure
+                        i.BlastRadius   = o.BlastRadius
+                        i.Transparency  = o.Transparency
+                    else
+                        i.CastShadow  = o.CastShadow
+                        i.Reflectance = o.Reflectance
+                    end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
+    },
+    -- Tier 4: decals y texturas
+    [4] = {
+        tracked = {},
+        check   = function(i) return i:IsA("Decal") or i:IsA("Texture") end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            local threshold = i:IsA("Decal") and CONFIG.decalTransparency or CONFIG.textureTransparency
+            _orig[i] = {Transparency = i.Transparency}
+            i.Transparency = math.max(i.Transparency, threshold)
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then i.Transparency = o.Transparency; _orig[i] = nil end
+            end
+            table.clear(t.tracked)
+        end,
+    },
+    -- Tier 5: luces y sonidos
+    [5] = {
+        tracked = {},
+        check   = function(i) return i:IsA("Light") or i:IsA("Sound") end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("Light") then
+                _orig[i] = {Shadows = i.Shadows}
+                i.Shadows = false
+            else
+                _orig[i] = {Volume = i.Volume}
+                i.Volume = i.Volume * CONFIG.soundVolumeReduction
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("Light") then i.Shadows = o.Shadows
+                    else i.Volume = o.Volume end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
+    },
+    -- Tier 6: meshes y decals de personaje
+    [6] = {
+        tracked = {},
+        check   = function(i)
+            return i:IsA("MeshPart") or i:IsA("FaceInstance") or i:IsA("ShirtGraphic")
+        end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            if i:IsA("MeshPart") then
+                _orig[i] = {RenderFidelity = i.RenderFidelity, LODX = i.LODX, LODY = i.LODY}
+                i.RenderFidelity = Enum.RenderFidelity.Performance
+                i.LODX = Enum.LevelOfDetail.Coarse
+                i.LODY = Enum.LevelOfDetail.Coarse
+            else
+                _orig[i] = {Transparency = i.Transparency}
+                i.Transparency = math.max(i.Transparency, 0.2)
+            end
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    if i:IsA("MeshPart") then
+                        i.RenderFidelity = o.RenderFidelity
+                        i.LODX = o.LODX
+                        i.LODY = o.LODY
+                    else
+                        i.Transparency = o.Transparency
+                    end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
+    },
+    -- Tier 7: menos agresivo — partículas y trails
+    [7] = {
+        tracked = {},
+        check   = function(i) return i:IsA("ParticleEmitter") or i:IsA("Trail") end,
+        collect = function() return dir():GetDescendants() end,
+        apply = function(t, i)
+            if _orig[i] then return end
+            local e = {Transparency = i.Transparency}
+            if i:IsA("ParticleEmitter") then
+                e.Rate = i.Rate
+                i.Rate = i.Rate * CONFIG.particleScale
+            end
+            i.Transparency = math.max(i.Transparency, 0.2)
+            _orig[i] = e
+            table.insert(t.tracked, i)
+        end,
+        revert = function(t)
+            for _, i in ipairs(t.tracked) do
+                local o = _orig[i]
+                if o then
+                    i.Transparency = o.Transparency
+                    if o.Rate then i.Rate = o.Rate end
+                    _orig[i] = nil
+                end
+            end
+            table.clear(t.tracked)
+        end,
+    },
 }
 
-local function notify(n, dir)
+local function notify(n, d)
     if type(CONFIG.onTierChange) == "function" then
-        CONFIG.onTierChange(n, dir)
+        CONFIG.onTierChange(n, d)
     end
 end
 
@@ -336,7 +348,7 @@ local function setTier(n)
         for i = old + 1, n do
             local t = TIERS[i]
             if not t then continue() end
-            if i == 7 then
+            if i == 1 then
                 t.apply(t)
             else
                 for _, inst in ipairs(t.collect()) do
@@ -358,7 +370,7 @@ local function onAdded(inst)
     if not _running then return end
     for i = 1, _tier do
         local t = TIERS[i]
-        if t and i ~= 7 and t.check(inst) then t.apply(t, inst) end
+        if t and i ~= 1 and t.check(inst) then t.apply(t, inst) end
     end
 end
 
@@ -376,7 +388,7 @@ function OPT.Enable()
     _running    = true
     _lastSample = tick()
 
-    _events.Added = Workspace.DescendantAdded:Connect(onAdded)
+    _events.Added   = dir().DescendantAdded:Connect(onAdded)
     _events.Stepped = RunService.RenderStepped:Connect(function(dt)
         table.insert(_fpsSamples, 1 / dt)
         if #_fpsSamples > 60 then table.remove(_fpsSamples, 1) end
@@ -391,13 +403,13 @@ function OPT.Enable()
 
         if _fpsAvg < CONFIG.targetFPS then
             _downCount = 0
-            _upCount  = _upCount + 1
+            _upCount   = _upCount + 1
             if _upCount >= CONFIG.confirmSamples and _tier < CONFIG.maxTier then
                 _upCount = 0
                 setTier(_tier + 1)
             end
         elseif _fpsAvg > CONFIG.targetFPS + CONFIG.recoverMargin then
-            _upCount    = 0
+            _upCount   = 0
             _downCount = _downCount + 1
             if _downCount >= CONFIG.confirmSamples and _tier > 0 then
                 _downCount = 0
@@ -418,11 +430,11 @@ function OPT.Disable()
     _events = {}
 
     setTier(0)
-    _orig      = {}
+    _orig       = {}
     _fpsSamples = {}
-    _fpsAvg    = 0
-    _upCount   = 0
-    _downCount = 0
+    _fpsAvg     = 0
+    _upCount    = 0
+    _downCount  = 0
 end
 
 function OPT.Toggle()
