@@ -512,21 +512,15 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(minBtn, 14)
-    local minLine = newL({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "—",
-        TextColor3 = Color3.fromRGB(80, 80, 80),
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-    }, minBtn)
+    local minIcon = newI("minimize", 14, minBtn)
+    minIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
     minBtn.MouseEnter:Connect(function()
         tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
-        tw(minLine, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
+        tw(minIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
     end)
     minBtn.MouseLeave:Connect(function()
         tw(minBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
-        tw(minLine, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+        tw(minIcon, {ImageColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
 
     -- Maximize button
@@ -539,22 +533,41 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(maxBtn, 14)
-    local maxBox = newL({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "□",
-        TextColor3 = Color3.fromRGB(80, 80, 80),
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-    }, maxBtn)
+    local maxIcon = newI("maximize", 14, maxBtn)
+    maxIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
+
+    -- Maximize functionality
+    local isMaximized = false
+    local originalSize = APTX.MainFrame.Size
+    local originalPosition = APTX.MainFrame.Position
+
+    local function toggleMaximize()
+        isMaximized = not isMaximized
+        if isMaximized then
+            -- Store original size and position
+            originalSize = APTX.MainFrame.Size
+            originalPosition = APTX.MainFrame.Position
+            -- Maximize to fill most of the screen
+            APTX.MainFrame.Size = UDim2.new(0.9, 0, 0.9, 0)
+            APTX.MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+            APTX.MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        else
+            -- Restore original size and position
+            APTX.MainFrame.Size = originalSize
+            APTX.MainFrame.Position = originalPosition
+            APTX.MainFrame.AnchorPoint = Vector2.new(0, 0)
+        end
+    end
+
     maxBtn.MouseEnter:Connect(function()
         tw(maxBtn, {BackgroundColor3 = Theme.Success}, TI_HOVER)
-        tw(maxBox, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
+        tw(maxIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
     end)
     maxBtn.MouseLeave:Connect(function()
         tw(maxBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
-        tw(maxBox, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+        tw(maxIcon, {ImageColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
+    maxBtn.MouseButton1Click:Connect(toggleMaximize)
 
     -- Close button
     local closeBtn = newB({
@@ -566,21 +579,15 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(closeBtn, 14)
-    local closeX = newL({
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "✕",
-        TextColor3 = Color3.fromRGB(80, 80, 80),
-        Font = Enum.Font.Gotham,
-        TextSize = 12,
-    }, closeBtn)
+    local closeIcon = newI("close", 14, closeBtn)
+    closeIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
     closeBtn.MouseEnter:Connect(function()
         tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
-        tw(closeX, {TextColor3 = Color3.new(1,1,1)}, TI_HOVER)
+        tw(closeIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
     end)
     closeBtn.MouseLeave:Connect(function()
         tw(closeBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
-        tw(closeX, {TextColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+        tw(closeIcon, {ImageColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
     end)
     closeBtn.MouseButton1Click:Connect(function()
         APTX:ToggleVisibility()
@@ -656,7 +663,7 @@ function APTX:CreateHideButton()
     local hideBtn = newB({
         Name = "HideButton",
         Size = UDim2.new(0, 40, 0, 40),
-        Position = UDim2.new(0, 12, 0, 12),
+        Position = UDim2.new(0.5, -20, 0, 12),
         BackgroundColor3 = Color3.fromRGB(10, 10, 10),
         Text = "",
         BorderSizePixel = 0,
@@ -664,8 +671,8 @@ function APTX:CreateHideButton()
     }, APTX.GUI)
     newC(hideBtn, 10)
     newS(hideBtn, Theme.Border, 1)
-    local hideIcon = newI("menu", 20, hideBtn)
-    hideIcon.ImageColor3 = Theme.BrandLo
+    local hideIcon = newI("chevron-down", 20, hideBtn)
+    hideIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 
     local function onEnter()
         tw(hideBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
@@ -677,7 +684,7 @@ function APTX:CreateHideButton()
         tw(hideBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
         local s = hideBtn:FindFirstChildOfClass("UIStroke")
         if s then tw(s, {Color = Theme.Border}, TI_HOVER) end
-        tw(hideIcon, {ImageColor3 = Theme.BrandLo}, TI_HOVER)
+        tw(hideIcon, {ImageColor3 = Color3.fromRGB(255, 255, 255)}, TI_HOVER)
     end
 
     hideBtn.MouseEnter:Connect(onEnter)
@@ -717,9 +724,9 @@ function APTX:ToggleVisibility()
     -- FIX #6: Update HideButton position here so ALL callers keep it in sync
     if APTX.HideButton then
         if APTX.IsVisible then
-            tw(APTX.HideButton, {Position = UDim2.new(0, 12, 0, 12)}, TI_SLOW)
+            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 0, 12)}, TI_SLOW)
         else
-            tw(APTX.HideButton, {Position = UDim2.new(0, 12, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
+            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
         end
     end
 end
