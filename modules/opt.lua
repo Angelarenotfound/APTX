@@ -836,9 +836,7 @@ local _cc = {
     bad   = "rgb(239,68,68)",
 }
 
-OPT.Counter = {}
-
-function OPT.Counter.Enable()
+local function _ctrEnable()
     if _ctr.gui then return end
     local lp = Players.LocalPlayer
     if not lp then return end
@@ -887,7 +885,6 @@ function OPT.Counter.Enable()
 
     gui.Parent = lp:WaitForChild("PlayerGui")
 
-    -- Drag
     local dragging, ds, sp = false, nil, nil
 
     win.InputBegan:Connect(function(inp)
@@ -916,7 +913,6 @@ function OPT.Counter.Enable()
         end)
     )
 
-    -- FPS (EMA independiente del loop principal de OPT)
     local fps = 0
     table.insert(_ctr.conns,
         RunService.RenderStepped:Connect(function(dt)
@@ -931,12 +927,20 @@ function OPT.Counter.Enable()
     _ctr.gui = gui
 end
 
-function OPT.Counter.Disable()
+local function _ctrDisable()
     if not _ctr.gui then return end
     for _, c in ipairs(_ctr.conns) do c:Disconnect() end
     _ctr.conns = {}
     _ctr.gui:Destroy()
     _ctr.gui = nil
+end
+
+function OPT.Counter(action)
+    if action == "enable" then
+        _ctrEnable()
+    elseif action == "disable" then
+        _ctrDisable()
+    end
 end
 
 return OPT
