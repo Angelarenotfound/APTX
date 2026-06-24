@@ -514,6 +514,8 @@ function APTX:CreateTopBar()
     newC(minBtn, 14)
     local minIcon = newI("minimize", 14, minBtn)
     minIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
+    minIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    minIcon.Position = UDim2.fromScale(0.5, 0.5)
     minBtn.MouseEnter:Connect(function()
         tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
         tw(minIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
@@ -535,6 +537,8 @@ function APTX:CreateTopBar()
     newC(maxBtn, 14)
     local maxIcon = newI("maximize", 14, maxBtn)
     maxIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
+    maxIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    maxIcon.Position = UDim2.fromScale(0.5, 0.5)
 
     -- Maximize functionality
     local isMaximized = false
@@ -579,8 +583,10 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(closeBtn, 14)
-    local closeIcon = newI("close", 14, closeBtn)
+    local closeIcon = newI("x", 14, closeBtn)
     closeIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
+    closeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    closeIcon.Position = UDim2.fromScale(0.5, 0.5)
     closeBtn.MouseEnter:Connect(function()
         tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
         tw(closeIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
@@ -662,35 +668,28 @@ end
 function APTX:CreateHideButton()
     local hideBtn = newB({
         Name = "HideButton",
-        Size = UDim2.new(0, 40, 0, 40),
-        Position = UDim2.new(0.5, -20, 0, 12),
-        BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+        Size = UDim2.fromScale(0.06, 0.03),
+        Position = UDim2.fromScale(0.5, 0.005),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundTransparency = 1,
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
+        ZIndex = 9999,
+        Visible = false,
     }, APTX.GUI)
-    newC(hideBtn, 10)
-    newS(hideBtn, Theme.Border, 1)
-    local hideIcon = newI("chevron-down", 20, hideBtn)
-    hideIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 
-    local function onEnter()
-        tw(hideBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
-        local s = hideBtn:FindFirstChildOfClass("UIStroke")
-        if s then tw(s, {Color = Theme.BorderHover}, TI_HOVER) end
-        tw(hideIcon, {ImageColor3 = Theme.BrandMid}, TI_HOVER)
-    end
-    local function onLeave()
-        tw(hideBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
-        local s = hideBtn:FindFirstChildOfClass("UIStroke")
-        if s then tw(s, {Color = Theme.Border}, TI_HOVER) end
-        tw(hideIcon, {ImageColor3 = Color3.fromRGB(255, 255, 255)}, TI_HOVER)
-    end
+    local arrowIcon = Instance.new("ImageLabel")
+    arrowIcon.Name = "Arrow"
+    arrowIcon.Size = UDim2.fromScale(1, 1)
+    arrowIcon.BackgroundTransparency = 1
+    arrowIcon.Image = Icons["chevron-down"] or ""
+    arrowIcon.ImageColor3 = Color3.new(1, 1, 1)
+    arrowIcon.ScaleType = Enum.ScaleType.Fit
+    arrowIcon.ZIndex = 9999
+    arrowIcon.Parent = hideBtn
 
-    hideBtn.MouseEnter:Connect(onEnter)
-    hideBtn.MouseLeave:Connect(onLeave)
     hideBtn.MouseButton1Click:Connect(function()
-        -- FIX #6: position update is now handled inside ToggleVisibility so all callers stay in sync
         APTX:ToggleVisibility()
     end)
 
@@ -721,13 +720,9 @@ function APTX:ToggleVisibility()
         end)
     end
 
-    -- FIX #6: Update HideButton position here so ALL callers keep it in sync
+    -- HideButton is only visible when the GUI is hidden
     if APTX.HideButton then
-        if APTX.IsVisible then
-            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 0, 12)}, TI_SLOW)
-        else
-            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
-        end
+        APTX.HideButton.Visible = not APTX.IsVisible
     end
 end
 
