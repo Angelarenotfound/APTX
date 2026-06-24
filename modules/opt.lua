@@ -62,6 +62,7 @@ local RunService      = game:GetService("RunService")
 local Workspace       = game:GetService("Workspace")
 local MaterialService = game:GetService("MaterialService")
 local Debris          = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
 
 local function dir()
     return CONFIG.directory or Workspace
@@ -823,5 +824,119 @@ end
 
 --- Get the TIERS table reference (read-only recommended)
 function OPT.GetTiers() return TIERS end
+-- ═══════════════════════════════════════════════════════════
+-- FPS COUNTER
+-- ═══════════════════════════════════════════════════════════
+local _ctr = { gui = nil, conns = {} }
+
+local _cc = {
+    muted = "rgb(90,90,90)",
+    good  = "rgb(34,197,94)",
+    warn  = "rgb(245,158,11)",
+    bad   = "rgb(239,68,68)",
+}
+
+OPT.Counter = {}
+
+function OPT.Counter.Enable()
+    if _ctr.gui then return end
+    local lp = Players.LocalPlayer
+    if not lp then return end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name           = "OPT_Counter"
+    gui.ResetOnSpawn   = false
+    gui.DisplayOrder   = 999
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local win = Instance.new("Frame")
+    win.Name                   = "Win"
+    win.Size                   = UDim2.new(0, 94, 0, 30)
+    win.Position               = UDim2.new(0, 14, 0, 14)
+    win.BackgroundColor3       = Color3.fromRGB(11, 11, 11)
+    win.BackgroundTransparency = 0.04
+    win.BorderSizePixel        = 0
+    win.Parent                 = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent       = win
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color        = Color3.fromRGB(192, 192, 192)
+    stroke.Transparency = 0.88
+    stroke.Thickness    = 1
+    stroke.Parent       = win
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft  = UDim.new(0, 10)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.Parent       = win
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Name                   = "Label"
+    lbl.Size                   = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.RichText               = true
+    lbl.Text                   = '<font color="' .. _cc.muted .. '">FPS</font> <font color="' .. _cc.muted .. '">--</font>'
+    lbl.Font                   = Enum.Font.Code
+    lbl.TextSize               = 13
+    lbl.TextColor3             = Color3.fromRGB(255, 255, 255)
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.Parent                 = win
+
+    gui.Parent = lp:WaitForChild("PlayerGui")
+
+    -- Drag
+    local dragging, ds, sp = false, nil, nil
+
+    win.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            ds = inp.Position
+            sp = win.Position
+        end
+    end)
+
+    win.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    table.insert(_ctr.conns,
+        UserInputService.InputChanged:Connect(function(inp)
+            if not dragging then return end
+            if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+            and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+            local d = inp.Position - ds
+            win.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end)
+    )
+
+    -- FPS (EMA independiente del loop principal de OPT)
+    local fps = 0
+    table.insert(_ctr.conns,
+        RunService.RenderStepped:Connect(function(dt)
+            if dt <= 0 then return end
+            fps = fps * 0.85 + (1 / dt) * 0.15
+            local v   = math.floor(fps + 0.5)
+            local col = v >= 50 and _cc.good or v >= 30 and _cc.warn or _cc.bad
+            lbl.Text  = '<font color="' .. _cc.muted .. '">FPS</font> <b><font color="' .. col .. '">' .. v .. '</font></b>'
+        end)
+    )
+
+    _ctr.gui = gui
+end
+
+function OPT.Counter.Disable()
+    if not _ctr.gui then return end
+    for _, c in ipairs(_ctr.conns) do c:Disconnect() end
+    _ctr.conns = {}
+    _ctr.gui:Destroy()
+    _ctr.gui = nil
+end
 
 return OPT
