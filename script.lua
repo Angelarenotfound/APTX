@@ -2,10 +2,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local TeleportService = game:GetService("TeleportService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Workspace = game:GetService("Workspace")
+local vim = game:GetService("VirtualInputManager")
 
 
 -- MODULES
@@ -26,65 +29,36 @@ local chractive
 local chr
 texe = false
 xchr = false
+mhealing = false
 local exe = nil
 local sit
 local target
 local force
-
--- CACHED REFS — avoids WaitForChild per-frame/input
-local playerFolder = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(player.Name)
-local gameProps = workspace:FindFirstChild("GameProperties")
-local function refreshPlayerFolder()
-    local pf = workspace:FindFirstChild("Players")
-    if pf then playerFolder = pf:FindFirstChild(player.Name) end
-end
-local function refreshGameProps()
-    gameProps = workspace:FindFirstChild("GameProperties")
-end
 
 -- GLOBAL FUNCTIONS
 local function getRoot(character)
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 end
 
--- PERF FIX: Use cached ref + FindFirstChild (no WaitForChild in hot paths)
 local function getChar()
-    if not playerFolder then refreshPlayerFolder() end
-    if not playerFolder then return nil end
-    return playerFolder:GetAttribute("Character")
+    local rchar = workspace.Players:WaitForChild(player.Name):GetAttribute("Character")
+    return rchar
 end
 
 local function getTeam()
-    if not playerFolder then refreshPlayerFolder() end
-    if not playerFolder then return nil end
-    return playerFolder:GetAttribute("Team")
+    local team = Workspace.Players:WaitForChild(player.Name):GetAttribute("Team")
+    return team
 end
 
 local function gameState()
-    if not gameProps then refreshGameProps() end
-    if not gameProps then return nil end
-    local stateObj = gameProps:FindFirstChild("State")
-    if not stateObj then return nil end
-    return stateObj.Value
+    local gstate = Workspace.GameProperties.State.Value
+    return gstate
 end
 
--- PERF FIX: Safe navigation instead of deep WaitForChild chain
 local function getCooldown(ab)
-    local ok, result = pcall(function()
-        local bar = Players.LocalPlayer
-            and Players.LocalPlayer:FindFirstChild("PlayerGui")
-            and Players.LocalPlayer.PlayerGui:FindFirstChild("Round")
-            and Players.LocalPlayer.PlayerGui.Round:FindFirstChild("Game")
-            and Players.LocalPlayer.PlayerGui.Round.Game:FindFirstChild("Ability")
-            and Players.LocalPlayer.PlayerGui.Round.Game.Ability:FindFirstChild("Bar")
-        if not bar then return nil end
-        local abObj = bar:FindFirstChild("AB" .. ab)
-        if not abObj then return nil end
-        local cdObj = abObj:FindFirstChild("CD")
-        if not cdObj then return nil end
-        return cdObj.Text
-    end)
-    return ok and result or nil
+    local abn = "AB" .. ab
+    local cd = Players.LocalPlayer.PlayerGui.Round.Game.Ability.Bar:WaitForChild(abn).CD.Text
+    return cd
 end
 
 
@@ -192,9 +166,10 @@ end)
 perfRefreshBtn:SetTooltip("Reset and reapply all optimization settings", { delay = 0.3 })
 
 -- SPEED VARS
-local speedType = "TP Walk"
+local speedType = "Assembly Velocity"
 local speedValue = 0.1
 local speedConnection = nil
+local speedLv = nil -- LinearVelocity reference
 
 
 -- SPEED FUNCTIONS
@@ -204,17 +179,38 @@ local function clearSpeed()
         speedConnection = nil
     end
 
+    -- Destruir VectorForce y su Attachment
     if force then
+        local att = force:FindFirstChildOfClass("Attachment") or force.Attachment0
         force:Destroy()
+        if att then att:Destroy() end
         force = nil
+    end
+
+    -- Destruir LinearVelocity y su Attachment
+    if speedLv then
+        local att = speedLv:FindFirstChildOfClass("Attachment") or speedLv.Attachment0
+        speedLv:Destroy()
+        if att then att:Destroy() end
+        speedLv = nil
     end
 
     pcall(function()
         local char = player.Character
         if char then
+            -- Limpiar cualquier attachment _SpeedAtt / _SpeedLvAtt residual
+            for _, child in ipairs(char:GetDescendants()) do
+                if child:IsA("Attachment") and (child.Name == "_SpeedAtt" or child.Name == "_SpeedLvAtt") then
+                    child:Destroy()
+                end
+            end
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then
                 hum.WalkSpeed = 16
+            end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.AssemblyLinearVelocity = Vector3.zero
             end
         end
         local at = Workspace.Players:WaitForChild(player.Name).ClientHandler
@@ -232,31 +228,64 @@ local function applySpeed()
     if not hum then return end
 
     local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
+    -- Velocidad base normalizada: misma escala para todos los métodos
+    -- speedValue 0.1 = +10%, 0.5 = +50%, 0.8 = +80%, 1.0 = +100%
+    local mult = 1 + speedValue      -- 1.0 a 2.0
+    local targetSpeed = 16 * mult     -- studs/sec
+
+    -- ========================================
+    --  TP Walk OPTIMIZADO (Con Acumulador de Tiempo)
+    -- ========================================
     if speedType == "TP Walk" then
-        speedConnection = RunService.Heartbeat:Connect(function(delta)
+        hum.WalkSpeed = 16
+        local accumulator = 0
+        local updateInterval = 0.025 -- Actualiza cada 25ms (40 veces/seg) en lugar de 60. Reduce el lag drásticamente.
+
+        speedConnection = RunService.Heartbeat:Connect(function(dt)
             if not (char and hum and hum.Parent) then
                 clearSpeed()
                 return
             end
+
             if hum.MoveDirection.Magnitude > 0 then
-                char:TranslateBy(hum.MoveDirection * speedValue * delta * 10)
+                accumulator = accumulator + dt
+                
+                -- Solo movemos el CFrame cuando pasa el tiempo límite
+                if accumulator >= updateInterval then
+                    local step = targetSpeed * accumulator
+                    hrp.CFrame = hrp.CFrame + (hum.MoveDirection * step)
+                    accumulator = 0 -- Reiniciamos el contador
+                end
+            else
+                accumulator = 0
             end
         end)
 
+    -- ========================================
+    --  WalkSpeed (nativo, estable)
+    -- ========================================
     elseif speedType == "WalkSpeed" then
-        hum.WalkSpeed = 16 * (1 + speedValue)
+        hum.WalkSpeed = targetSpeed
 
+    -- ========================================
+    --  VectorForce NORMALIZADO
+    -- ========================================
     elseif speedType == "VectorForce" then
-        if not hrp then return end
-
         local att = Instance.new("Attachment")
+        att.Name = "_SpeedAtt"
         att.Parent = hrp
 
         force = Instance.new("VectorForce")
+        force.Name = "_SpeedForce"
         force.Attachment0 = att
         force.RelativeTo = Enum.ActuatorRelativeTo.World
         force.Parent = hrp
+
+        -- Fuerza normalizada: mult * 400 es ~equivalente a targetSpeed en WalkSpeed
+        -- (caracter Roblox ~50-70 masa, 400 de fuerza da ~16 studs/s)
+        local baseForce = mult * 400
 
         speedConnection = RunService.Heartbeat:Connect(function()
             if not (char and hum and hum.Parent) then
@@ -264,12 +293,71 @@ local function applySpeed()
                 return
             end
             if hum.MoveDirection.Magnitude > 0 then
-                force.Force = hum.MoveDirection * (speedValue * 10000)
+                force.Force = hum.MoveDirection * baseForce
             else
                 force.Force = Vector3.zero
             end
         end)
 
+    -- ========================================
+    --  LinearVelocity (smooth, sin lag)
+    -- ========================================
+    elseif speedType == "LinearVelocity" then
+        local att = Instance.new("Attachment")
+        att.Name = "_SpeedLvAtt"
+        att.Parent = hrp
+
+        speedLv = Instance.new("LinearVelocity")
+        speedLv.Name = "_SpeedLV"
+        speedLv.Attachment0 = att
+        speedLv.MaxForce = Vector3.new(10000, 0, 10000)
+        speedLv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+        speedLv.VectorVelocity = Vector3.zero
+        speedLv.Parent = hrp
+
+        hum.WalkSpeed = 16
+
+        speedConnection = RunService.Heartbeat:Connect(function()
+            if not (char and hum and hum.Parent) then
+                clearSpeed()
+                return
+            end
+            if hum.MoveDirection.Magnitude > 0 then
+                local targetVel = hum.MoveDirection * targetSpeed
+                -- Lerp más agresivo para respuesta rápida
+                speedLv.VectorVelocity = speedLv.VectorVelocity:Lerp(targetVel, 0.3)
+            else
+                -- Frenado suave al soltar teclas
+                speedLv.VectorVelocity = speedLv.VectorVelocity:Lerp(Vector3.zero, 0.15)
+            end
+        end)
+
+    -- ========================================
+    --  Assembly Velocity (Nativo, Cero Lag, Suave)
+    -- ========================================
+    elseif speedType == "Assembly Velocity" then
+        hum.WalkSpeed = 16
+        
+        speedConnection = RunService.Heartbeat:Connect(function()
+            if not (char and hum and hum.Parent) then
+                clearSpeed()
+                return
+            end
+            
+            if hum.MoveDirection.Magnitude > 0 then
+                local currentVel = hrp.AssemblyLinearVelocity
+                -- Sobrescribimos X y Z (movimiento), pero mantenemos Y (para que la gravedad y saltos funcionen normal)
+                hrp.AssemblyLinearVelocity = Vector3.new(
+                    hum.MoveDirection.X * targetSpeed,
+                    currentVel.Y,
+                    hum.MoveDirection.Z * targetSpeed
+                )
+            end
+        end)
+
+    -- ========================================
+    --  Speed (game sync) — server-side
+    -- ========================================
     elseif speedType == "Speed (game sync)" then
         pcall(function()
             local at = Workspace.Players:WaitForChild(player.Name).ClientHandler
@@ -289,8 +377,10 @@ local speedTypeMenu = APTX:Menu("Speed", "Speed Type", "Select...", "star", {
     "TP Walk",
     "WalkSpeed",
     "VectorForce",
+    "LinearVelocity",
+    "Assembly Velocity",
     "Speed (game sync)"
-}, "TP Walk", function(selected)
+}, "Assembly Velocity", function(selected)
     speedType = selected
     clearSpeed()
 end)
@@ -387,17 +477,15 @@ local mh = false
 
 
 -- SURVIVORS FUNCTIONS
--- PERF FIX: Use cached ref, no WaitForChild per frame
 local function isMetalCh()
-    if not playerFolder then refreshPlayerFolder() end
-    if not playerFolder then return false end
-    return playerFolder:GetAttribute("DamageReduction") == 1
+    local dmr = Workspace.Players:WaitForChild(player.Name)
+    return dmr:GetAttribute("DamageReduction") == 1
 end
 
 local function mheal()
     local selected = nil
 
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
         local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
         if obj then
             local charAttr = obj:GetAttribute("Character")
@@ -431,7 +519,7 @@ end
 
 local function tpexe()
     local selected = nil
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
         local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
         if obj and obj:GetAttribute("Team") == "EXE" then
             selected = p
@@ -460,7 +548,7 @@ end
 
 local function metaltpc()
     local exep = nil
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
         local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
         if obj and obj:GetAttribute("Team") == "EXE" then
             exep = p
@@ -494,40 +582,24 @@ local function metaltpc()
     end
 end
 
-local automcCharConn = nil
 local function startAutomc()
     if automcLoop then automcLoop:Disconnect() end
-    if automcCharConn then automcCharConn:Disconnect() end
-    -- Cache character ref once, refresh only on respawn
-    local cachedChar = nil
-    local function onCharacterAdded(newChar)
-        cachedChar = newChar
-    end
-    if player.Character then cachedChar = player.Character end
-    automcCharConn = player.CharacterAdded:Connect(onCharacterAdded)
-
     automcLoop = RunService.Heartbeat:Connect(function()
         if not automc then
             automcLoop:Disconnect()
             automcLoop = nil
-            if automcCharConn then automcCharConn:Disconnect(); automcCharConn = nil end
             return
         end
 
         if not exe then return end
 
-        -- PERF FIX: Use cached char ref instead of player.Character each frame
-        local char = cachedChar
-        if not char then return end
-        local myRoot = char:FindFirstChild("HumanoidRootPart")
+        local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         local exeRoot = exe.Character and exe.Character:FindFirstChild("HumanoidRootPart")
 
         if not myRoot or not exeRoot then return end
 
         local dist = (myRoot.Position - exeRoot.Position).Magnitude
-        -- PERF FIX: Use cached playerFolder (no WaitForChild)
-        local myChar = getChar()
-        if myChar ~= "MetalSonic" and not isMetalCh() then return end
+        if getChar() ~= "MetalSonic" and not isMetalCh() then return end
         if dist <= 20 and mh then
             if not inside then
                 inside = true
@@ -563,19 +635,15 @@ end)
 survStun:SetTooltip("Press Q (or L1) near EXE to automatically stun them", { delay = 0.3 })
 
 local survHeal = APTX:Toggle("Survivors", "Auto metalsonic eggman heal", "redo", false, function(state)
-    -- Feature controlled by E/R1 keybind in InputBegan
+    mhealing = state
 end)
 survHeal:SetTooltip("Press E (or R1) near Eggman/Tails to auto-heal as MetalSonic", { delay = 0.3 })
 
 local survHitbox = APTX:Toggle("Survivors", "Metalsonic Charge hitbox", "calculator", false, function(state)
     automc = state
-    if state then
-        if not mcstarted then
-            startAutomc()
-            mcstarted = true
-        end
-    else
-        mcstarted = false
+    if not mcstarted then
+        startAutomc()
+        mcstarted = true
     end
 end)
 survHitbox:SetTooltip("Auto-target EXE within 20 studs when playing as MetalSonic", { delay = 0.3 })
@@ -589,7 +657,7 @@ local s = nil
 local function xcharge()
     local survivors = {}
 
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
         local obj = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(p.Name)
         if obj and obj:GetAttribute("Team") == "Survivor" then
             table.insert(survivors, p)
@@ -632,21 +700,14 @@ local killSilver = APTX:Toggle("Killers", "Auto Silver Minigame", "wind", false,
 
     if not state then return end
 
-    -- PERF FIX: Use cached ref + FindFirstChild instead of WaitForChild
-    local character = workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(player.Name)
-    if not character then return end
+    local character = workspace.Players:WaitForChild(player.Name, 10)
 
-    -- PERF FIX: Guard against stacked escape coroutines
-    local escapeRunning = false
     local function escape()
-        if escapeRunning then return end
-        escapeRunning = true
         for i = 1, 20 do
-            pcall(mouse2click)
-            pcall(mouse1click)
+            mouse2click()
+            mouse1click()
             task.wait(0.1)
         end
-        escapeRunning = false
     end
 
     local function onAdd(child)
@@ -659,16 +720,10 @@ local killSilver = APTX:Toggle("Killers", "Auto Silver Minigame", "wind", false,
 end)
 killSilver:SetTooltip("Automatically click Silver's skill check highlights to win the minigame", { delay = 0.3 })
 
-local killChargeStop = nil
 local killChargeAll = APTX:Toggle("Killers", "Charge ALL", "check", false, function(state)
     if state then
         local plrs = Players:GetPlayers()
-        killChargeStop = tpeve(0.5, plrs)
-    else
-        if killChargeStop then
-            killChargeStop()
-            killChargeStop = nil
-        end
+        tpeve(0.5, plrs)
     end
 end)
 killChargeAll:SetTooltip("Unleash a charge attack on every player in the server", { delay = 0.3 })
@@ -1081,31 +1136,17 @@ end)
 
 
 -- LISTENERS
--- PERF FIX: Removed task.wait(7), added debounce to prevent stacked coroutines
-local stateDebounce = false
 Workspace.GameProperties.State.Changed:Connect(function(value)
-    if stateDebounce then return end
-    stateDebounce = true
-    -- Wait for SEC phase to settle before acting
-    task.delay(2, function()
-        stateDebounce = false
-        if value == "SEC" and chractive and chr then
-            pcall(function()
-                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-                if remotes then
-                    local voted = remotes:FindFirstChild("Voted")
-                    if voted then
-                        voted:FireServer(chr)
-                    end
-                end
-            end)
+    task.wait(7)
+    if value == "SEC" then
+        if chractive then
+            local args = { chr }
+            ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Voted"):FireServer(unpack(args))
+            print('fired con:')
+            print('hecho')
         end
-    end)
+    end
 end)
-
--- PERF FIX: Consolidated InputBegan — early returns, debounce, no duplicate key checks
-local keyDebounce = {}
-local KEY_DEBOUNCE_CD = 0.15
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -1113,105 +1154,62 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     local key = input.KeyCode
 
-    -- Keybind listener (always allowed, no debounce needed)
     if listening then
         flyKeybind = key
         listening = false
         return
     end
 
-    -- Fly keybind
     if flyKeybind and key == flyKeybind then
         toggleFly()
-        return
     end
-
-    -- PERF FIX: Early return — skip gameState/getChar for non-game keys
-    local isGameKey = (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1
-                   or key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1)
-    if not isGameKey then return end
 
     local state = gameState()
     if state ~= "ING" and state ~= "80s" then return end
 
-    -- PERF FIX: Debounce per key to prevent coroutine spam
-    local now = tick()
-    if keyDebounce[key] and (now - keyDebounce[key]) < KEY_DEBOUNCE_CD then return end
-    keyDebounce[key] = now
-
     local char = getChar()
 
-    -- Consolidated Q/L1 handler (was two separate if blocks)
     if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe then
         if char == "Sonic" or char == "MetalSonic" then
-            task.spawn(function()
-                task.wait(1.5)
-                tpexe()
-            end)
-        end
-        if char == "MetalSonic" then
-            local cd = getCooldown(1)
-            if cd and tonumber(cd) == 0 then
-                mh = true
-                task.delay(10, function()
-                    mh = false
-                end)
-            end
+            task.wait(1.5)
+            tpexe()
         end
     end
 
-    -- Consolidated E/R1 handler (was two separate if blocks)
+    if (key == Enum.KeyCode.Q or key == Enum.KeyCode.ButtonL1) and texe then
+        if char == "MetalSonic" and tonumber(getCooldown(1)) == 0 then
+            mh = true
+            task.wait(10)
+            mh = false
+        end
+    end
+
     if (key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1) and xchr then
         if char == "2011x" then
-            task.spawn(function()
-                task.wait(3)
-                xcharge()
-            end)
-        elseif char == "MetalSonic" then
+            task.wait(3)
+            xcharge()
+        end
+    end
+
+    if (key == Enum.KeyCode.E or key == Enum.KeyCode.ButtonR1) and xchr then
+        if char == "MetalSonic" then
             mheal()
         end
     end
 end)
 
 
--- PERF FIX: Event-driven EXE finder — no polling loop
-local function refreshExePlayer()
-    exe = nil
-    local folder = workspace:FindFirstChild("Players")
-    if not folder then return end
+-- LOOPS
+while true do
+    task.wait(10)
     for _, p in ipairs(Players:GetPlayers()) do
-        local obj = folder:FindFirstChild(p.Name)
-        if obj and obj:GetAttribute("Team") == "EXE" then
-            exe = p
-            break
+        local folder = workspace:FindFirstChild("Players")
+        if folder then
+            local obj = folder:FindFirstChild(p.Name)
+            if obj and obj:GetAttribute("Team") == "EXE" then
+                exe = p
+                break
+            end
         end
     end
-end
-
--- Initial scan
-refreshExePlayer()
-
--- Refresh when players join/leave
-Players.PlayerAdded:Connect(function()
-    task.wait(1)
-    refreshExePlayer()
-end)
-Players.PlayerRemoving:Connect(function()
-    task.wait(0.5)
-    refreshExePlayer()
-end)
-
--- Also refresh when player folder attributes change (team swaps)
-local exePlayersFolder = workspace:FindFirstChild("Players")
-if exePlayersFolder then
-    exePlayersFolder.ChildAdded:Connect(function(child)
-        task.wait(0.5)
-        if child:GetAttribute("Team") == "EXE" then
-            exe = Players:FindFirstChild(child.Name)
-        end
-    end)
-    exePlayersFolder.ChildRemoved:Connect(function()
-        task.wait(0.5)
-        refreshExePlayer()
-    end)
 end
