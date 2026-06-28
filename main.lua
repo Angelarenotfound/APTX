@@ -27,6 +27,17 @@ local Theme = {
     BrandLo = Color3.fromRGB(85, 85, 85),            -- #555555
     BrandMid = Color3.fromRGB(192, 192, 192),        -- #c0c0c0
     BrandHi = Color3.fromRGB(242, 242, 242),         -- #f2f2f2
+    -- DeltaVuln extras (logging, floating frames)
+    FloatingBg = Color3.fromRGB(5, 5, 5),
+    FloatingBorder = Color3.fromRGB(30, 30, 30),
+    LogDefault = Color3.fromRGB(180, 180, 180),
+    LogRemote = Color3.fromRGB(100, 180, 255),
+    LogInvoke = Color3.fromRGB(255, 180, 100),
+    LogEvent = Color3.fromRGB(100, 255, 150),
+    LogWarning = Color3.fromRGB(255, 200, 80),
+    LogError = Color3.fromRGB(255, 80, 80),
+    LogSuccess = Color3.fromRGB(80, 255, 120),
+    LogInfo = Color3.fromRGB(100, 180, 255),
 }
 
 -- Weak table to register component references (avoids setting arbitrary properties on Roblox instances)
@@ -514,8 +525,6 @@ function APTX:CreateTopBar()
     newC(minBtn, 14)
     local minIcon = newI("minimize", 14, minBtn)
     minIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-    minIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-    minIcon.Position = UDim2.fromScale(0.5, 0.5)
     minBtn.MouseEnter:Connect(function()
         tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
         tw(minIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
@@ -537,8 +546,6 @@ function APTX:CreateTopBar()
     newC(maxBtn, 14)
     local maxIcon = newI("maximize", 14, maxBtn)
     maxIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-    maxIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-    maxIcon.Position = UDim2.fromScale(0.5, 0.5)
 
     -- Maximize functionality
     local isMaximized = false
@@ -583,10 +590,8 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(closeBtn, 14)
-    local closeIcon = newI("x", 14, closeBtn)
+    local closeIcon = newI("close", 14, closeBtn)
     closeIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-    closeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-    closeIcon.Position = UDim2.fromScale(0.5, 0.5)
     closeBtn.MouseEnter:Connect(function()
         tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
         tw(closeIcon, {ImageColor3 = Color3.new(1,1,1)}, TI_HOVER)
@@ -668,28 +673,35 @@ end
 function APTX:CreateHideButton()
     local hideBtn = newB({
         Name = "HideButton",
-        Size = UDim2.fromScale(0.06, 0.03),
-        Position = UDim2.fromScale(0.5, 0.005),
-        AnchorPoint = Vector2.new(0.5, 0),
-        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 40, 0, 40),
+        Position = UDim2.new(0.5, -20, 0, 12),
+        BackgroundColor3 = Color3.fromRGB(10, 10, 10),
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        ZIndex = 9999,
-        Visible = false,
     }, APTX.GUI)
+    newC(hideBtn, 10)
+    newS(hideBtn, Theme.Border, 1)
+    local hideIcon = newI("chevron-down", 20, hideBtn)
+    hideIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
 
-    local arrowIcon = Instance.new("ImageLabel")
-    arrowIcon.Name = "Arrow"
-    arrowIcon.Size = UDim2.fromScale(1, 1)
-    arrowIcon.BackgroundTransparency = 1
-    arrowIcon.Image = Icons["chevron-down"] or ""
-    arrowIcon.ImageColor3 = Color3.new(1, 1, 1)
-    arrowIcon.ScaleType = Enum.ScaleType.Fit
-    arrowIcon.ZIndex = 9999
-    arrowIcon.Parent = hideBtn
+    local function onEnter()
+        tw(hideBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
+        local s = hideBtn:FindFirstChildOfClass("UIStroke")
+        if s then tw(s, {Color = Theme.BorderHover}, TI_HOVER) end
+        tw(hideIcon, {ImageColor3 = Theme.BrandMid}, TI_HOVER)
+    end
+    local function onLeave()
+        tw(hideBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
+        local s = hideBtn:FindFirstChildOfClass("UIStroke")
+        if s then tw(s, {Color = Theme.Border}, TI_HOVER) end
+        tw(hideIcon, {ImageColor3 = Color3.fromRGB(255, 255, 255)}, TI_HOVER)
+    end
 
+    hideBtn.MouseEnter:Connect(onEnter)
+    hideBtn.MouseLeave:Connect(onLeave)
     hideBtn.MouseButton1Click:Connect(function()
+        -- FIX #6: position update is now handled inside ToggleVisibility so all callers stay in sync
         APTX:ToggleVisibility()
     end)
 
@@ -720,9 +732,13 @@ function APTX:ToggleVisibility()
         end)
     end
 
-    -- HideButton is only visible when the GUI is hidden
+    -- FIX #6: Update HideButton position here so ALL callers keep it in sync
     if APTX.HideButton then
-        APTX.HideButton.Visible = not APTX.IsVisible
+        if APTX.IsVisible then
+            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 0, 12)}, TI_SLOW)
+        else
+            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
+        end
     end
 end
 
@@ -762,6 +778,12 @@ function APTX:Destroy()
         pcall(task.cancel, threadId)
     end
     APTX._sectionHideDelays = {}
+
+    -- Clean up floating frames
+    for _, ff in ipairs(APTX._floatingFrames) do
+        pcall(function() ff:Destroy() end)
+    end
+    APTX._floatingFrames = {}
 
     -- Clear notification stack
     APTX._notifStack = {}
@@ -2671,6 +2693,378 @@ function APTX:Notify(params)
     return result
 end
 
+--- Utility: format arguments for logging
+local function formatArgs(...)
+    local args = {...}
+    local parts = {}
+    for i, v in ipairs(args) do
+        local t = typeof(v)
+        if t == "string" then
+            if #v > 80 then
+                table.insert(parts, string.format('"%s..."', v:sub(1, 80)))
+            else
+                table.insert(parts, string.format('"%s"', v))
+            end
+        elseif t == "number" then
+            table.insert(parts, tostring(v))
+        elseif t == "boolean" then
+            table.insert(parts, tostring(v))
+        elseif t == "table" then
+            local keys = {}
+            for k in pairs(v) do table.insert(keys, tostring(k)) end
+            table.insert(parts, string.format("{%s}", #keys > 0 and table.concat(keys, ",") or "empty"))
+        elseif t == "Instance" then
+            table.insert(parts, string.format("[%s: %s]", v.ClassName, v.Name))
+        elseif t == "RBXScriptSignal" then
+            table.insert(parts, "[Signal]")
+        elseif t == "function" then
+            local info = debug.getinfo(v)
+            table.insert(parts, string.format("[Function: %s]", info.name or "?"))
+        else
+            table.insert(parts, string.format("[%s]", t))
+        end
+    end
+    return table.concat(parts, ", ")
+end
+
+--- Utility: safely hook a function
+local function safeHook(func, hook)
+    local ok, orig = pcall(hookfunction, func, hook)
+    if ok then return orig end
+    return nil
+end
+
+--- Utility: find last index of a character in a string
+local function lastIndexOf(str, char)
+    for i = #str, 1, -1 do
+        if str:sub(i, i) == char then return i end
+    end
+    return nil
+end
+
+
+
+-- ============================================================
+-- FLOATING FRAME SYSTEM — Ventanas flotantes para logs/monitoreo
+-- ============================================================
+APTX._floatingFrames = {}
+local FF_Z_BASE = 600
+
+function APTX:FloatingFrame(title, width, height, opts)
+    opts = opts or {}
+    local player = Players.LocalPlayer
+    if not player then
+        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+        player = Players.LocalPlayer
+    end
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "FFrame_" .. tostring(#APTX._floatingFrames + 1)
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent = playerGui
+
+    local w = width or 420
+    local h = height or 300
+    local headerH = 32
+    local x = opts.x or (80 + (#APTX._floatingFrames * 30))
+    local y = opts.y or (80 + (#APTX._floatingFrames * 30))
+
+    local frame = newF({
+        Name = "FloatingFrame",
+        Size = UDim2.new(0, w, 0, h),
+        Position = UDim2.new(0, x, 0, y),
+        BackgroundColor3 = Theme.FloatingBg,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = FF_Z_BASE + 1,
+    }, gui)
+    newC(frame, 10)
+    local frameStroke = newS(frame, Theme.FloatingBorder, 1)
+
+    local shadow = newF({
+        Size = UDim2.new(1, 12, 1, 12),
+        Position = UDim2.new(0.5, -6, 0.5, -6),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.88,
+        BorderSizePixel = 0,
+        ZIndex = FF_Z_BASE,
+    }, gui)
+    newC(shadow, 12)
+    local posSync = frame:GetPropertyChangedSignal("Position"):Connect(function()
+        if shadow and shadow.Parent then
+            shadow.Position = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset - 6, frame.Position.Y.Scale, frame.Position.Y.Offset - 6)
+        end
+    end)
+    local sizeSync = frame:GetPropertyChangedSignal("Size"):Connect(function()
+        if shadow and shadow.Parent then
+            shadow.Size = UDim2.new(1, frame.Size.X.Offset + 12, 1, frame.Size.Y.Offset + 12)
+        end
+    end)
+    shadow.Size = UDim2.new(1, w + 12, 1, h + 12)
+    shadow.Position = UDim2.new(0, x - 6, 0, y - 6)
+
+    local header = newF({
+        Name = "FFHeader",
+        Size = UDim2.new(1, 0, 0, headerH),
+        BackgroundColor3 = Color3.fromRGB(8, 8, 8),
+        BorderSizePixel = 0,
+        ZIndex = FF_Z_BASE + 2,
+    }, frame)
+    local headerHL = Instance.new("UIStroke")
+    headerHL.Color = Theme.BrandLo
+    headerHL.Thickness = 1
+    headerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    headerHL.Transparency = 0.85
+    headerHL.Parent = header
+
+    local titleLbl = newL({
+        Name = "FFTitle",
+        Size = UDim2.new(1, -80, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = title,
+        TextColor3 = Theme.TextPrimary,
+        Font = Enum.Font.GothamBold,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = FF_Z_BASE + 3,
+    }, header)
+
+    local btnFrame = newF({
+        Size = UDim2.new(0, 72, 1, 0),
+        Position = UDim2.new(1, -76, 0, 0),
+        BackgroundTransparency = 1,
+        ZIndex = FF_Z_BASE + 3,
+    }, header)
+    local btnLayout = Instance.new("UIListLayout")
+    btnLayout.FillDirection = Enum.FillDirection.Horizontal
+    btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    btnLayout.Padding = UDim.new(0, 4)
+    btnLayout.Parent = btnFrame
+
+    local pinBtn = newB({
+        Size = UDim2.new(0, 22, 0, 22),
+        BackgroundTransparency = 1,
+        Text = "\U0001f4cc",
+        TextColor3 = Theme.TextSecondary,
+        TextSize = 12,
+        Font = Enum.Font.Gotham,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        ZIndex = FF_Z_BASE + 4,
+    }, btnFrame)
+    local pinned = false
+    pinBtn.MouseButton1Click:Connect(function()
+        pinned = not pinned
+        pinBtn.TextColor3 = pinned and Theme.BrandMid or Theme.TextSecondary
+    end)
+
+    local closeBtn = newB({
+        Size = UDim2.new(0, 22, 0, 22),
+        BackgroundTransparency = 1,
+        Text = "\u2715",
+        TextColor3 = Theme.TextSecondary,
+        TextSize = 14,
+        Font = Enum.Font.Gotham,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        ZIndex = FF_Z_BASE + 4,
+    }, btnFrame)
+    closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Theme.Error}, TI_HOVER) end)
+    closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER) end)
+
+    local content = newF({
+        Name = "FFContent",
+        Size = UDim2.new(1, -4, 1, -(headerH + 4)),
+        Position = UDim2.new(0, 2, 0, headerH + 2),
+        BackgroundTransparency = 1,
+        ZIndex = FF_Z_BASE + 2,
+    }, frame)
+
+    local logList = Instance.new("ScrollingFrame")
+    logList.Name = "FFLogList"
+    logList.Size = UDim2.new(1, -4, 1, -30)
+    logList.Position = UDim2.new(0, 2, 0, 0)
+    logList.BackgroundTransparency = 1
+    logList.BorderSizePixel = 0
+    logList.ScrollBarThickness = 2
+    logList.ScrollBarImageColor3 = Theme.Border
+    logList.ScrollBarImageTransparency = 0.6
+    logList.ElasticBehavior = Enum.ElasticBehavior.Always
+    logList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    logList.Parent = content
+
+    local logLayout = Instance.new("UIListLayout")
+    logLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    logLayout.Padding = UDim.new(0, 1)
+    logLayout.Parent = logList
+    local logLayoutConn = logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        logList.CanvasSize = UDim2.new(0, 0, 0, logLayout.AbsoluteContentSize.Y + 2)
+    end)
+
+    local bottomBar = newF({
+        Size = UDim2.new(1, -4, 0, 26),
+        Position = UDim2.new(0, 2, 1, -28),
+        BackgroundTransparency = 1,
+        ZIndex = FF_Z_BASE + 3,
+    }, content)
+
+    local statusLabel = newL({
+        Size = UDim2.new(0, 100, 1, 0),
+        Position = UDim2.new(0, 4, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        TextColor3 = Theme.TextDisabled,
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = FF_Z_BASE + 4,
+    }, bottomBar)
+
+    local autoScroll = true
+    local autoScrollBtn = newB({
+        Size = UDim2.new(0, 50, 1, 0),
+        Position = UDim2.new(1, -104, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "AUTO⏺",
+        TextColor3 = Theme.BrandMid,
+        TextSize = 9,
+        Font = Enum.Font.GothamBold,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        ZIndex = FF_Z_BASE + 4,
+    }, bottomBar)
+    autoScrollBtn.MouseButton1Click:Connect(function()
+        autoScroll = not autoScroll
+        autoScrollBtn.TextColor3 = autoScroll and Theme.BrandMid or Theme.TextDisabled
+    end)
+
+    local clearBtn = newB({
+        Size = UDim2.new(0, 50, 1, 0),
+        Position = UDim2.new(1, -52, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "CLEAR",
+        TextColor3 = Theme.TextSecondary,
+        TextSize = 9,
+        Font = Enum.Font.GothamBold,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        ZIndex = FF_Z_BASE + 4,
+    }, bottomBar)
+    clearBtn.MouseButton1Click:Connect(function()
+        for _, child in ipairs(logList:GetChildren()) do
+            if child:IsA("TextLabel") or (child:IsA("Frame") and not child:IsA("UIListLayout")) then
+                child:Destroy()
+            end
+        end
+        logLayout.AbsoluteContentSize = UDim2.new(0, 0, 0, 0)
+    end)
+
+    local dragConns = makeDraggable(header, frame)
+    for _, conn in ipairs(dragConns) do table.insert(APTX._connections, conn) end
+
+    local zCounter = FF_Z_BASE + 5
+    local function bringToFront()
+        zCounter = zCounter + 1
+        frame.ZIndex = zCounter
+        shadow.ZIndex = zCounter - 1
+        for _, child in ipairs(frame:GetDescendants()) do
+            if child:IsA("GuiObject") then
+                child.ZIndex = child.ZIndex + 2
+            end
+        end
+    end
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            bringToFront()
+        end
+    end)
+
+    local _alive = true
+    closeBtn.MouseButton1Click:Connect(function()
+        if _alive then
+            _alive = false
+            tw(frame, {Size = UDim2.new(0, w, 0, 0), BackgroundTransparency = 1}, TI_MED)
+            tw(shadow, {BackgroundTransparency = 1}, TI_MED)
+            task.delay(0.25, function()
+                if gui and gui.Parent then gui:Destroy() end
+            end)
+        end
+    end)
+
+    local floatingFrame = {
+        _frame = frame, _gui = gui,
+        _logList = logList, _logLayout = logLayout,
+        _statusLabel = statusLabel, _autoScroll = autoScroll,
+        _alive = _alive, _pinned = pinned, _visible = true,
+
+        AddLog = function(self, text, color, icon)
+            if not self._alive then return end
+            local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
+            if icon then
+                newL({Size = UDim2.new(0, 16, 1, 0), Position = UDim2.new(0, 2, 0, 0), BackgroundTransparency = 1, Text = icon, TextColor3 = color or Theme.TextSecondary, TextSize = 10, Font = Enum.Font.Gotham, ZIndex = FF_Z_BASE + 4}, line)
+            end
+            newL({Size = UDim2.new(1, icon and -22 or -6, 1, 0), Position = UDim2.new(0, icon and 20 or 4, 0, 0), BackgroundTransparency = 1, Text = text, TextColor3 = color or Theme.LogDefault, TextSize = 11, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
+            if autoScroll then
+                task.delay(0.02, function()
+                    if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
+                end)
+            end
+            return line
+        end,
+
+        AddRichLog = function(self, parts)
+            if not self._alive then return end
+            local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
+            local xOff = 4
+            for _, part in ipairs(parts) do
+                local seg = newL({Size = UDim2.new(0, part.width or 0, 1, 0), Position = UDim2.new(0, xOff, 0, 0), BackgroundTransparency = 1, Text = part.text or "", TextColor3 = part.color or Theme.LogDefault, TextSize = part.size or 11, Font = part.bold and Enum.Font.GothamBold or Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
+                local w = seg.TextBounds.X + 4
+                seg.Size = UDim2.new(0, w, 1, 0)
+                xOff = xOff + w
+            end
+            if autoScroll then
+                task.delay(0.02, function()
+                    if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
+                end)
+            end
+            return line
+        end,
+
+        SetStatus = function(self, text, color)
+            if not self._alive then return end
+            statusLabel.Text = text or ""
+            statusLabel.TextColor3 = color or Theme.TextDisabled
+        end,
+
+        Clear = function(self)
+            if not self._alive then return end
+            for _, child in ipairs(logList:GetChildren()) do
+                if child:IsA("TextLabel") or (child:IsA("Frame") and child.Name ~= "_noop") then pcall(child.Destroy, child) end
+            end
+        end,
+
+        Show = function(self) if not self._alive then return end; frame.Visible = true; shadow.Visible = true; self._visible = true end,
+        Hide = function(self) if not self._alive then return end; frame.Visible = false; shadow.Visible = false; self._visible = false end,
+        Toggle = function(self) if self._visible then self:Hide() else self:Show() end end,
+        SetTitle = function(self, t) if not self._alive then return end; titleLbl.Text = t or title end,
+        Destroy = function(self) self._alive = false; if gui and gui.Parent then gui:Destroy() end end,
+        BringToFront = bringToFront,
+        IsPinned = function(self) return pinned end,
+    }
+    table.insert(APTX._floatingFrames, floatingFrame)
+    return floatingFrame
+end
+
+-- Expose Theme and utilities for consumers
+APTX.Theme = Theme
 APTX.Icons = Icons
+APTX.FormatArgs = formatArgs
+APTX.SafeHook = safeHook
+APTX.LastIndexOf = lastIndexOf
 
 return APTX
+
