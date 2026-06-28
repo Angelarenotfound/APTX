@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 
 local Debris = game:GetService("Debris")
 
-local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
+local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))()
 
 local Theme = {
     -- Xerion Design System — Monochrome / Silver
