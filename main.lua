@@ -524,6 +524,8 @@ function APTX:CreateTopBar()
     }, btnFrame)
     newC(minBtn, 14)
     local minIcon = newI("minimize", 14, minBtn)
+    minIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    minIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
     minIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
     minBtn.MouseEnter:Connect(function()
         tw(minBtn, {BackgroundColor3 = Theme.Warning}, TI_HOVER)
@@ -532,6 +534,9 @@ function APTX:CreateTopBar()
     minBtn.MouseLeave:Connect(function()
         tw(minBtn, {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}, TI_HOVER)
         tw(minIcon, {ImageColor3 = Color3.fromRGB(80, 80, 80)}, TI_HOVER)
+    end)
+    minBtn.MouseButton1Click:Connect(function()
+        APTX:ToggleVisibility()
     end)
 
     -- Maximize button
@@ -545,6 +550,8 @@ function APTX:CreateTopBar()
     }, btnFrame)
     newC(maxBtn, 14)
     local maxIcon = newI("maximize", 14, maxBtn)
+    maxIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    maxIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
     maxIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
 
     -- Maximize functionality
@@ -590,7 +597,9 @@ function APTX:CreateTopBar()
         AutoButtonColor = false,
     }, btnFrame)
     newC(closeBtn, 14)
-    local closeIcon = newI("close", 14, closeBtn)
+    local closeIcon = newI("x", 14, closeBtn)
+    closeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    closeIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
     closeIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
     closeBtn.MouseEnter:Connect(function()
         tw(closeBtn, {BackgroundColor3 = Theme.Error}, TI_HOVER)
@@ -673,35 +682,26 @@ end
 function APTX:CreateHideButton()
     local hideBtn = newB({
         Name = "HideButton",
-        Size = UDim2.new(0, 40, 0, 40),
-        Position = UDim2.new(0.5, -20, 0, 12),
-        BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+        Size = UDim2.new(0, 44, 0, 44),
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0, 6),
+        BackgroundTransparency = 1,
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
     }, APTX.GUI)
-    newC(hideBtn, 10)
-    newS(hideBtn, Theme.Border, 1)
-    local hideIcon = newI("chevron-down", 20, hideBtn)
-    hideIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    local hideIcon = newI("chevron-down", 26, hideBtn)
+    hideIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    hideIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+    hideIcon.ImageColor3 = Color3.fromRGB(200, 200, 200)
 
-    local function onEnter()
-        tw(hideBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
-        local s = hideBtn:FindFirstChildOfClass("UIStroke")
-        if s then tw(s, {Color = Theme.BorderHover}, TI_HOVER) end
-        tw(hideIcon, {ImageColor3 = Theme.BrandMid}, TI_HOVER)
-    end
-    local function onLeave()
-        tw(hideBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
-        local s = hideBtn:FindFirstChildOfClass("UIStroke")
-        if s then tw(s, {Color = Theme.Border}, TI_HOVER) end
-        tw(hideIcon, {ImageColor3 = Color3.fromRGB(255, 255, 255)}, TI_HOVER)
-    end
-
-    hideBtn.MouseEnter:Connect(onEnter)
-    hideBtn.MouseLeave:Connect(onLeave)
+    hideBtn.MouseEnter:Connect(function()
+        tw(hideIcon, {ImageColor3 = Theme.BrandHi}, TI_HOVER)
+    end)
+    hideBtn.MouseLeave:Connect(function()
+        tw(hideIcon, {ImageColor3 = Color3.fromRGB(200, 200, 200)}, TI_HOVER)
+    end)
     hideBtn.MouseButton1Click:Connect(function()
-        -- FIX #6: position update is now handled inside ToggleVisibility so all callers stay in sync
         APTX:ToggleVisibility()
     end)
 
@@ -732,12 +732,11 @@ function APTX:ToggleVisibility()
         end)
     end
 
-    -- FIX #6: Update HideButton position here so ALL callers keep it in sync
+    -- FIX #6: Update HideButton icon to reflect current state (button stays at top-center always)
     if APTX.HideButton then
-        if APTX.IsVisible then
-            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 0, 12)}, TI_SLOW)
-        else
-            tw(APTX.HideButton, {Position = UDim2.new(0.5, -20, 1, -(APTX.HideButton.Size.Y.Offset + 12))}, TI_SLOW)
+        local icon = APTX.HideButton:FindFirstChild("Icon")
+        if icon then
+            icon.Image = Icons[APTX.IsVisible and "chevron-down" or "chevron-up"] or ""
         end
     end
 end
