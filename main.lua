@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 
 local Debris = game:GetService("Debris")
 
-local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))()
+local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
 
 local Theme = {
     -- Xerion Design System — Monochrome / Silver
@@ -2848,7 +2848,7 @@ function APTX:FloatingFrame(title, width, height, opts)
     local pinBtn = newB({
         Size = UDim2.new(0, 22, 0, 22),
         BackgroundTransparency = 1,
-        Text = "\U0001f4cc",
+        Text = "\u{1F4CC}",
         TextColor3 = Theme.TextSecondary,
         TextSize = 12,
         Font = Enum.Font.Gotham,
@@ -2865,7 +2865,7 @@ function APTX:FloatingFrame(title, width, height, opts)
     local closeBtn = newB({
         Size = UDim2.new(0, 22, 0, 22),
         BackgroundTransparency = 1,
-        Text = "\u2715",
+        Text = "\u{2715}",
         TextColor3 = Theme.TextSecondary,
         TextSize = 14,
         Font = Enum.Font.Gotham,
