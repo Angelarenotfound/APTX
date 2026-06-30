@@ -232,14 +232,33 @@ local function makeDraggable(handle, target)
     return {c1, c2, c3, c4}
 end
 
---- Unified click handler for Frames (InputBegan, supports mouse + touch)
+--- Unified click handler for Frames (InputBegan + InputEnded, supports mouse + touch)
+--- FIX: On touch, only fires if the finger didn't move significantly (prevents accidental clicks during scroll gestures)
 local function connectClick(frame, fn)
-    return frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+    local conns = {}
+    local touchStart = nil
+
+    local c1 = frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
             fn()
+        elseif input.UserInputType == Enum.UserInputType.Touch then
+            touchStart = input.Position
         end
     end)
+    table.insert(conns, c1)
+
+    local c2 = frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch and touchStart then
+            local delta = input.Position - touchStart
+            if math.abs(delta.X) < 10 and math.abs(delta.Y) < 10 then
+                fn()
+            end
+            touchStart = nil
+        end
+    end)
+    table.insert(conns, c2)
+
+    return conns
 end
 
 --- Card creation — Xerion-style: returns card frame, border stroke, and layout
@@ -645,11 +664,12 @@ function APTX:CreateSidebar(parent)
     scrolling.Size = UDim2.new(1, 0, 1, 0)
     scrolling.BackgroundTransparency = 1
     scrolling.BorderSizePixel = 0
-    scrolling.ScrollBarThickness = 3
+    scrolling.ScrollBarThickness = 4
     scrolling.ScrollBarImageColor3 = Theme.BrandLo
     scrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
     scrolling.ScrollBarImageTransparency = 0.6
-    scrolling.ElasticBehavior = Enum.ElasticBehavior.Always
+    scrolling.ScrollingEnabled = true
+    scrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scrolling.Parent = sectionList
 
     local layout = Instance.new("UIListLayout")
@@ -1169,10 +1189,11 @@ function APTX:Section(text, icon, default)
         section.Container.Size = UDim2.new(1, 0, 1, 0)
         section.Container.BackgroundTransparency = 1
         section.Container.BorderSizePixel = 0
-        section.Container.ScrollBarThickness = 3
+        section.Container.ScrollBarThickness = 4
         section.Container.ScrollBarImageColor3 = Theme.Border
         section.Container.ScrollBarImageTransparency = 0.5
-        section.Container.ElasticBehavior = Enum.ElasticBehavior.Always
+        section.Container.ScrollingEnabled = true
+        section.Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
         section.Container.Visible = false
         section.Container.CanvasSize = UDim2.new(0, 0, 0, 0)
         section.Container.Parent = APTX.ContentArea
@@ -1220,6 +1241,9 @@ function APTX:Section(text, icon, default)
 
         local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncCanvas)
         table.insert(sectionComp._connections, layoutConn)
+
+        -- FIX: Ensure CanvasSize is synced after initial layout computation
+        task.defer(syncCanvas)
 
         -- Track button connections so they can be cleaned up
         local btnClickConn = section.Button.MouseButton1Click:Connect(function()
@@ -1318,6 +1342,20 @@ function APTX:SelectSection(name)
         if section.Name == name then
             -- Activate this section immediately
             section.Container.Visible = true
+            -- FIX: Reset scroll position when switching sections
+            section.Container.CanvasPosition = Vector2.new(0, 0)
+            -- FIX: Auto-scroll sidebar to show active section button
+            if APTX.SectionList and section.Button then
+                local btnAbsY = section.Button.AbsolutePosition.Y
+                local scrollAbsY = APTX.SectionList.AbsolutePosition.Y
+                local scrollH = APTX.SectionList.AbsoluteSize.Y
+                local btnH = section.Button.AbsoluteSize.Y
+                if btnAbsY < scrollAbsY or btnAbsY + btnH > scrollAbsY + scrollH then
+                    local btnContentY = (btnAbsY - scrollAbsY) + APTX.SectionList.CanvasPosition.Y
+                    local newY = math.max(0, btnContentY - scrollH / 2 + btnH / 2)
+                    APTX.SectionList.CanvasPosition = Vector2.new(0, newY)
+                end
+            end
             -- Animate entry on first open
             if not section._entered then
                 section._entered = true
@@ -1409,7 +1447,7 @@ function APTX:Button(sectionName, text, icon, callback)
         -- Track tweens and their connections for proper cleanup
         comp._tweens = {}
 
-        local clickConn = connectClick(card, function()
+        local clickConns = connectClick(card, function()
             if comp._disabled then return end
 
             -- Cancel previous pending tweens to prevent overlap
@@ -1440,7 +1478,7 @@ function APTX:Button(sectionName, text, icon, callback)
 
             if cb then cb() end
         end)
-        table.insert(comp._connections, clickConn)
+        for _, c in ipairs(clickConns) do table.insert(comp._connections, c) end
 
         function comp:Edit(params)
             params = params or {}
@@ -1674,14 +1712,24 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         }, topRow)
 
         -- Track: 6px tall, positioned 8px below topRow (18+8=26px from padded top)
-        local track = newF({
-            Name = "Track",
-            Size = UDim2.new(1, 0, 0, 6),
-            Position = UDim2.new(0, 0, 0, 26),
-            BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+        -- Touch-friendly hit area (44px tall, centered on track for mobile usability)
+        local trackHitbox = newF({
+            Name = "TrackHitbox",
+            Size = UDim2.new(1, 0, 0, 44),
+            Position = UDim2.new(0, 0, 0, 7),
+            BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Active = true,
         }, card)
+
+        local track = newF({
+            Name = "Track",
+            Size = UDim2.new(1, 0, 0, 6),
+            Position = UDim2.new(0, 0, 0, 19),
+            BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+            BorderSizePixel = 0,
+            Active = true,
+        }, trackHitbox)
         newC(track, 3)
         -- Xerion silver border on track
         local trackBorder = newS(track, Theme.Border, 1)
@@ -1729,7 +1777,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end
 
         -- Track these connections so they can be cleaned up
-        local ibConn = track.InputBegan:Connect(function(input)
+        local ibConn = trackHitbox.InputBegan:Connect(function(input)
             if comp._disabled then return end
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true
@@ -1739,8 +1787,9 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end)
         table.insert(comp._connections, ibConn)
 
-        local ieConn = track.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        -- FIX: Use UserInputService.InputEnded so dragging stops even if finger leaves the track area
+        local ieConn = UserInputService.InputEnded:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
                 dragging = false
                 tw(knob, {Size = UDim2.new(0, 18, 0, 18)}, TI_HOVER)
             end
@@ -1904,9 +1953,8 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
                     local pos = input.Position
                     local absPos = card.AbsolutePosition
                     local absSize = card.AbsoluteSize
-                    local scale = APTX._scale or 1
-                    -- Expand hit area by the full open height so clicks inside the dropdown list don't close it
-                    local expandedH = absSize.Y + (#currentOptions * 37 * scale)
+                    -- FIX: absSize.Y already reflects the expanded card height; only add a small margin
+                    local expandedH = absSize.Y + 10
                     if pos.X < absPos.X or pos.X > absPos.X + absSize.X
                         or pos.Y < absPos.Y or pos.Y > absPos.Y + expandedH then
                         isOpen = false
@@ -1987,6 +2035,8 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         end
 
         rebuildOptions()
+        -- FIX: Show the default/selected option in the header label
+        if selected then label.Text = selected end
 
         dropBtn.MouseButton1Click:Connect(function()
             if comp._disabled then return end
@@ -3066,4 +3116,3 @@ APTX.SafeHook = safeHook
 APTX.LastIndexOf = lastIndexOf
 
 return APTX
-
