@@ -7,7 +7,6 @@ local Debris = game:GetService("Debris")
 local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
 
 local Theme = {
-    -- Xerion Design System — Monochrome / Silver
     Background = Color3.fromRGB(0, 0, 0),           -- #000000
     Surface = Color3.fromRGB(7, 7, 7),               -- #070707
     Card = Color3.fromRGB(15, 15, 15),               -- #0f0f0f
