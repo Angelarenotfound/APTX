@@ -3107,7 +3107,6 @@ function APTX:FloatingFrame(title, width, height, opts)
     return floatingFrame
 end
 
--- Expose Theme and utilities for consumers
 APTX.Theme = Theme
 APTX.Icons = Icons
 APTX.FormatArgs = formatArgs
