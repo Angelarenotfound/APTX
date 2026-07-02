@@ -3,7 +3,6 @@ Fonting.__index = Fonting
 
 local SCOPE = {
     "Players",
-    "CoreGui",
     "StarterGui",
     "Workspace",
     "Lighting",
