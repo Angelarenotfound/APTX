@@ -703,13 +703,14 @@ function APTX:CreateHideButton()
         Name = "HideButton",
         Size = UDim2.new(0, 44, 0, 44),
         AnchorPoint = Vector2.new(0.5, 0),
-        Position = UDim2.new(0.5, 0, 0, 6),
+        Position = UDim2.new(0.5, 0, 0, 0),
+        ZIndex = 50,
         BackgroundTransparency = 1,
         Text = "",
         BorderSizePixel = 0,
         AutoButtonColor = false,
     }, APTX.GUI)
-    local hideIcon = newI("chevron-down", 26, hideBtn)
+    local hideIcon = newI("chevron-up", 26, hideBtn)
     hideIcon.AnchorPoint = Vector2.new(0.5, 0.5)
     hideIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
     hideIcon.ImageColor3 = Color3.fromRGB(200, 200, 200)
@@ -755,7 +756,7 @@ function APTX:ToggleVisibility()
     if APTX.HideButton then
         local icon = APTX.HideButton:FindFirstChild("Icon")
         if icon then
-            icon.Image = Icons[APTX.IsVisible and "chevron-down" or "chevron-up"] or ""
+            icon.Image = Icons[APTX.IsVisible and "chevron-up" or "chevron-down"] or ""
         end
     end
 end
