@@ -1,3 +1,5 @@
+local Dagger = {}
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
@@ -6,47 +8,26 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 local Config = {
-    Enabled = true,
+    Range = 15,
+    BehindDist = 2.1,
+    Cooldown = 1.5,
+    HoldDuration = 0.5,
+    TweenDuration = 0.08,
+    SmartMovement = true,
+    ArcHeight = 1.8,
     Debug = false,
     ShowRange = false,
-    
-    Behind = {
-        Mode = "standard",
-        Standard = {
-            Range = 15,
-            BehindDist = 2.1,
-            Duration = 0.08
-        },
-        Larger = {
-            Range = 30,
-            BehindDist = 2.5,
-            Duration = 0.7
-        }
-    },
-    
-    Front = {
-        Mode = "rodear",
-        Rodear = {
-            Duration = 0.08,
-            ArcHeight = 1.8,
-            BehindDist = 2.1
-        },
-        Standard = {
-            Duration = 0.15,
-            BehindDist = 2.1
-        }
-    },
-    
-    HoldDuration = 0.5,
-    Cooldown = 1.5
+    Enabled = true,
+    Keybind = Enum.KeyCode.Q,
+    AlternativeKey = Enum.KeyCode.ButtonL2
 }
 
-local isTPActive = false
-local LastTP = 0
-local CurrentMode = nil
-local RangeCircle = nil
-local RangeConnection = nil
-local CurrentRange = 0
+local State = {
+    LastTP = 0,
+    isTPActive = false,
+    RangeIndicator = nil,
+    TargetKiller = nil
+}
 
 local function DebugLog(...)
     if Config.Debug then
@@ -72,7 +53,6 @@ local function GetKiller()
     if not pf then return nil end
     local kf = pf:FindFirstChild("Killers")
     if not kf then return nil end
-    
     for _, k in pairs(kf:GetChildren()) do
         if k:IsA("Model") then
             local hrp = k:FindFirstChild("HumanoidRootPart")
@@ -100,7 +80,6 @@ local function GetCooldown()
     if not btn then return 999 end
     local cd = btn:FindFirstChild("CooldownTime") or btn:FindFirstChild("Cooldown")
     if not cd then return 0 end
-    
     if cd:IsA("NumberValue") then
         return cd.Value
     elseif cd:IsA("StringValue") then
@@ -119,210 +98,37 @@ local function IsKillerBehind(hrp, khrp)
     return dotProduct < -0.3
 end
 
-local function GetCurrentRange()
-    local killer = GetKiller()
-    if not killer then return 0 end
-    
-    local char = GetChar()
-    if not char then return 0 end
-    
-    local phrp = GetHRP(char)
-    local khrp = GetHRP(killer)
-    if not phrp or not khrp then return 0 end
-    
-    local isBehind = IsKillerBehind(phrp, khrp)
-    
-    if isBehind then
-        local mode = Config.Behind.Mode
-        local modeConfig = Config.Behind[mode]
-        if modeConfig then
-            return modeConfig.Range or 15
-        end
-    else
-        local mode = Config.Front.Mode
-        local modeConfig = Config.Front[mode]
-        if modeConfig then
-            return modeConfig.Range or 12
-        end
-    end
-    
-    return 15
-end
-
-local function CreateRangeCircle()
-    if RangeCircle then
-        RangeCircle:Destroy()
-        RangeCircle = nil
-    end
-    
-    if not Config.ShowRange then return end
-    
-    local killer = GetKiller()
-    if not killer then return end
-    
-    local khrp = GetHRP(killer)
-    if not khrp then return end
-    
-    local range = GetCurrentRange()
-    CurrentRange = range
-    
-    local circle = Instance.new("Part")
-    circle.Name = "RangeCircle"
-    circle.Size = Vector3.new(range * 2, 0.1, range * 2)
-    circle.Shape = Enum.PartType.Cylinder
-    circle.Anchored = true
-    circle.CanCollide = false
-    circle.CanQuery = false
-    circle.CanTouch = false
-    circle.Transparency = 0.7
-    circle.Material = Enum.Material.Neon
-    circle.BrickColor = BrickColor.new("Bright blue")
-    circle.CFrame = CFrame.new(khrp.Position - Vector3.new(0, 1.5, 0))
-    circle.Parent = Workspace
-    
-    -- Crear efecto de borde brillante
-    local attachment = Instance.new("Attachment")
-    attachment.Parent = circle
-    
-    local beam = Instance.new("Beam")
-    beam.Parent = circle
-    beam.Attachment0 = attachment
-    beam.Attachment1 = attachment
-    beam.Color = ColorSequence.new(Color3.fromRGB(0, 150, 255))
-    beam.Transparency = NumberSequence.new(0.7)
-    beam.Width0 = 0.05
-    beam.Width1 = 0.05
-    beam.LightEmission = 0.5
-    beam.Enabled = true
-    
-    RangeCircle = circle
-    DebugLog("Círculo de rango creado:", range)
-end
-
-local function UpdateRangeCircle()
-    if not Config.ShowRange then
-        if RangeCircle then
-            RangeCircle:Destroy()
-            RangeCircle = nil
-        end
-        return
-    end
-    
-    local killer = GetKiller()
-    if not killer then
-        if RangeCircle then
-            RangeCircle:Destroy()
-            RangeCircle = nil
-        end
-        return
-    end
-    
-    local khrp = GetHRP(killer)
-    if not khrp then
-        if RangeCircle then
-            RangeCircle:Destroy()
-            RangeCircle = nil
-        end
-        return
-    end
-    
-    local newRange = GetCurrentRange()
-    
-    if not RangeCircle then
-        CreateRangeCircle()
-        return
-    end
-    
-    -- Actualizar si el rango cambió
-    if CurrentRange ~= newRange then
-        CurrentRange = newRange
-        local targetSize = Vector3.new(newRange * 2, 0.1, newRange * 2)
-        
-        -- Animación suave al cambiar de tamaño
-        local tween = TweenService:Create(RangeCircle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = targetSize,
-            Transparency = 0.7
-        })
-        tween:Play()
-        
-        DebugLog("Rango actualizado:", newRange)
-    end
-    
-    -- Actualizar posición (sigue al killer)
-    RangeCircle.CFrame = CFrame.new(khrp.Position - Vector3.new(0, 1.5, 0))
-end
-
-local function StartRangeUpdater()
-    if RangeConnection then
-        RangeConnection:Disconnect()
-        RangeConnection = nil
-    end
-    
-    if not Config.ShowRange then return end
-    
-    RangeConnection = RunService.Heartbeat:Connect(function()
-        UpdateRangeCircle()
-    end)
-    
-    DebugLog("Updater de rango iniciado")
-end
-
-local function StopRangeUpdater()
-    if RangeConnection then
-        RangeConnection:Disconnect()
-        RangeConnection = nil
-    end
-    
-    if RangeCircle then
-        RangeCircle:Destroy()
-        RangeCircle = nil
-    end
-    
-    DebugLog("Updater de rango detenido")
-end
-
-local function SmoothMovement(hrp, targetCFrame, duration)
+local function SmartArcMovement(hrp, khrp, targetCFrame, duration)
     local startPos = hrp.Position
     local endPos = targetCFrame.Position
-    
-    local steps = math.floor(duration / 0.015)
-    if steps < 1 then steps = 1 end
-    local stepTime = duration / steps
-    
-    for i = 1, steps do
-        local alpha = i / steps
-        local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
-        local currentPos = startPos:Lerp(endPos, smoothAlpha)
-        local currentCFrame = CFrame.new(currentPos, targetCFrame.Position + targetCFrame.LookVector)
-        hrp.CFrame = currentCFrame
-        task.wait(stepTime)
-    end
-    
-    hrp.CFrame = targetCFrame
-end
-
-local function ArcMovement(hrp, khrp, targetCFrame, duration, arcHeight)
-    local startPos = hrp.Position
-    local endPos = targetCFrame.Position
-    
     local dist = (endPos - startPos).Magnitude
+    
     if dist < 3 then
-        SmoothMovement(hrp, targetCFrame, duration)
+        local steps = math.floor(duration / 0.02)
+        if steps < 1 then steps = 1 end
+        local stepTime = duration / steps
+        for i = 1, steps do
+            local alpha = i / steps
+            local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
+            local currentPos = startPos:Lerp(endPos, smoothAlpha)
+            hrp.CFrame = CFrame.new(currentPos, endPos + targetCFrame.LookVector)
+            task.wait(stepTime)
+        end
+        hrp.CFrame = targetCFrame
         return
     end
     
     local midPoint = (startPos + endPos) / 2
     local direction = (endPos - startPos).Unit
     local perpendicular = Vector3.new(-direction.Z, 0, direction.X).Unit
-    
     local toKiller = (khrp.Position - startPos).Unit
     local side = 1
     if perpendicular:Dot(toKiller) < 0 then
         side = -1
     end
     
-    local actualHeight = math.min(arcHeight, dist * 0.4)
-    local arcPoint = midPoint + perpendicular * actualHeight * side + Vector3.new(0, 0.3, 0)
+    local arcHeight = math.min(Config.ArcHeight, dist * 0.4)
+    local arcPoint = midPoint + perpendicular * arcHeight * side + Vector3.new(0, 0.3, 0)
     
     local steps = math.floor(duration / 0.015)
     if steps < 1 then steps = 1 end
@@ -331,11 +137,9 @@ local function ArcMovement(hrp, khrp, targetCFrame, duration, arcHeight)
     for i = 1, steps do
         local alpha = i / steps
         local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
-        
         local p1 = startPos:Lerp(arcPoint, smoothAlpha)
         local p2 = arcPoint:Lerp(endPos, smoothAlpha)
         local currentPos = p1:Lerp(p2, smoothAlpha)
-        
         local lookTarget = khrp.Position
         hrp.CFrame = CFrame.new(currentPos, lookTarget)
         task.wait(stepTime)
@@ -344,20 +148,138 @@ local function ArcMovement(hrp, khrp, targetCFrame, duration, arcHeight)
     hrp.CFrame = targetCFrame
 end
 
-local function ExecuteTP()
+local function DirectMovement(hrp, targetCFrame, duration)
+    local startPos = hrp.Position
+    local endPos = targetCFrame.Position
+    local steps = math.floor(duration / 0.015)
+    if steps < 1 then steps = 1 end
+    local stepTime = duration / steps
+    for i = 1, steps do
+        local alpha = i / steps
+        local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
+        local currentPos = startPos:Lerp(endPos, smoothAlpha)
+        local currentCFrame = CFrame.new(currentPos, targetCFrame.Position + targetCFrame.LookVector)
+        hrp.CFrame = currentCFrame
+        task.wait(stepTime)
+    end
+    hrp.CFrame = targetCFrame
+end
+
+local function CreateDashEffect(startPos, endPos)
+    local part = Instance.new("Part")
+    part.Size = Vector3.new(0.8, 0.8, 0.8)
+    part.CFrame = CFrame.new(startPos, endPos)
+    part.Anchored = true
+    part.CanCollide = false
+    part.Material = Enum.Material.Neon
+    part.BrickColor = BrickColor.new("Bright blue")
+    part.Transparency = 0.5
+    part.Parent = Workspace
+    
+    local trail = Instance.new("Trail")
+    trail.Parent = part
+    trail.Lifetime = 0.15
+    trail.MinLength = 0.3
+    trail.Color = ColorSequence.new(Color3.fromRGB(0, 150, 255))
+    trail.Transparency = NumberSequence.new(0.7)
+    
+    local tween = TweenService:Create(part, TweenInfo.new(0.2), {
+        Transparency = 1,
+        Size = Vector3.new(0.1, 0.1, 0.1)
+    })
+    tween:Play()
+    tween.Completed:Connect(function()
+        part:Destroy()
+    end)
+end
+
+local function UpdateRangeIndicator()
+    if not Config.ShowRange then
+        if State.RangeIndicator then
+            State.RangeIndicator:Destroy()
+            State.RangeIndicator = nil
+        end
+        return
+    end
+    
+    local killer = GetKiller()
+    if not killer then
+        if State.RangeIndicator then
+            State.RangeIndicator:Destroy()
+            State.RangeIndicator = nil
+        end
+        return
+    end
+    
+    local khrp = GetHRP(killer)
+    if not khrp then return end
+    
+    if not State.RangeIndicator then
+        local circle = Instance.new("Part")
+        circle.Size = Vector3.new(Config.Range * 2, 0.1, Config.Range * 2)
+        circle.Shape = Enum.PartType.Cylinder
+        circle.Anchored = true
+        circle.CanCollide = false
+        circle.Material = Enum.Material.Neon
+        circle.BrickColor = BrickColor.new("Bright green")
+        circle.Transparency = 0.7
+        circle.TopSurface = Enum.SurfaceType.Smooth
+        circle.BottomSurface = Enum.SurfaceType.Smooth
+        
+        local mesh = Instance.new("CylinderMesh")
+        mesh.Parent = circle
+        
+        local attachment = Instance.new("Attachment")
+        attachment.Parent = circle
+        
+        local highlight = Instance.new("Highlight")
+        highlight.Parent = circle
+        highlight.FillColor = Color3.fromRGB(0, 255, 100)
+        highlight.OutlineColor = Color3.fromRGB(0, 255, 100)
+        highlight.FillTransparency = 0.7
+        highlight.OutlineTransparency = 0.5
+        
+        State.RangeIndicator = circle
+        State.RangeIndicator.Parent = Workspace
+    end
+    
+    State.RangeIndicator.Position = khrp.Position - Vector3.new(0, 0.5, 0)
+    local inRange = false
+    local char = GetChar()
+    if char then
+        local phrp = GetHRP(char)
+        if phrp then
+            local dist = (khrp.Position - phrp.Position).Magnitude
+            if dist <= Config.Range then
+                inRange = true
+            end
+        end
+    end
+    
+    if inRange then
+        State.RangeIndicator.BrickColor = BrickColor.new("Bright green")
+        State.RangeIndicator.Transparency = 0.5
+    else
+        State.RangeIndicator.BrickColor = BrickColor.new("Bright red")
+        State.RangeIndicator.Transparency = 0.7
+    end
+end
+
+local function TP()
     if not Config.Enabled then
-        DebugLog("Deshabilitado")
+        DebugLog("Dagger desactivado")
         return false
     end
     
-    if isTPActive then
-        DebugLog("Ya activo")
+    if State.isTPActive then
+        DebugLog("TP ya activo")
         return false
     end
     
     local currentTime = os.clock()
-    if currentTime - LastTP < Config.Cooldown then
-        DebugLog("En cooldown")
+    local timeSinceLast = currentTime - State.LastTP
+    if timeSinceLast < Config.Cooldown then
+        DebugLog("En cooldown:", timeSinceLast, "s")
         return false
     end
     
@@ -368,92 +290,63 @@ local function ExecuteTP()
     end
     
     local char = GetChar()
-    if not char then return false end
-    
-    local phrp = GetHRP(char)
-    if not phrp then return false end
-    
-    local killer = GetKiller()
-    if not killer then return false end
-    
-    local khrp = GetHRP(killer)
-    if not khrp then return false end
-    
-    local dist = (khrp.Position - phrp.Position).Magnitude
-    local isBehind = IsKillerBehind(phrp, khrp)
-    
-    local modeConfig
-    local modeName
-    local range
-    
-    if isBehind then
-        modeName = Config.Behind.Mode
-        modeConfig = Config.Behind[modeName]
-        if not modeConfig then
-            DebugLog("Modo detrás inválido:", modeName)
-            return false
-        end
-        
-        range = modeConfig.Range or 15
-        if dist > range then
-            DebugLog("Fuera de rango:", dist, ">", range)
-            return false
-        end
-        
-        DebugLog("Modo DETRÁS:", modeName)
-    else
-        modeName = Config.Front.Mode
-        modeConfig = Config.Front[modeName]
-        if not modeConfig then
-            DebugLog("Modo enfrente inválido:", modeName)
-            return false
-        end
-        
-        range = modeConfig.Range or 12
-        if dist > range then
-            DebugLog("Fuera de rango:", dist, ">", range)
-            return false
-        end
-        
-        DebugLog("Modo ENFRENTE:", modeName)
+    if not char then
+        DebugLog("Personaje no disponible")
+        return false
     end
     
-    local behindDist = modeConfig.BehindDist or 2.1
-    local duration = modeConfig.Duration or 0.15
+    local phrp = GetHRP(char)
+    if not phrp then
+        DebugLog("HRP no encontrado")
+        return false
+    end
+    
+    local killer = GetKiller()
+    if not killer then
+        DebugLog("Killer no encontrado")
+        return false
+    end
+    
+    local khrp = GetHRP(killer)
+    if not khrp then
+        DebugLog("HRP del killer no encontrado")
+        return false
+    end
+    
+    local dist = (khrp.Position - phrp.Position).Magnitude
+    if dist > Config.Range then
+        DebugLog("Fuera de rango:", dist, ">", Config.Range)
+        return false
+    end
+    
     local lv = khrp.CFrame.LookVector.Unit
-    local bp = khrp.Position - (lv * behindDist)
+    local bp = khrp.Position - (lv * Config.BehindDist)
     local tp = Vector3.new(bp.X, phrp.Position.Y, bp.Z)
     local targetCFrame = CFrame.new(tp, tp + lv)
     
-    DebugLog("Posición actual:", phrp.Position)
-    DebugLog("Posición killer:", khrp.Position)
-    DebugLog("Destino:", tp)
-    DebugLog("Duración:", duration, "s")
-    
-    isTPActive = true
-    CurrentMode = modeName
-    
+    State.isTPActive = true
+    local startPos = phrp.Position
     local success = false
-    if isBehind then
+    
+    local killerBehind = IsKillerBehind(phrp, khrp)
+    
+    if Config.SmartMovement and killerBehind then
         success = pcall(function()
-            SmoothMovement(phrp, targetCFrame, duration)
+            SmartArcMovement(phrp, khrp, targetCFrame, Config.TweenDuration)
         end)
     else
-        if modeName == "rodear" then
-            local arcHeight = modeConfig.ArcHeight or 1.8
-            success = pcall(function()
-                ArcMovement(phrp, khrp, targetCFrame, duration, arcHeight)
-            end)
-        else
-            success = pcall(function()
-                SmoothMovement(phrp, targetCFrame, duration)
-            end)
-        end
+        success = pcall(function()
+            DirectMovement(phrp, targetCFrame, Config.TweenDuration)
+        end)
     end
     
     if success then
-        LastTP = currentTime
-        DebugLog("✓ TP exitoso!")
+        State.LastTP = currentTime
+        DebugLog("TP exitoso")
+        
+        task.spawn(function()
+            CreateDashEffect(startPos, tp)
+        end)
         
         local startTime = tick()
         while tick() - startTime < Config.HoldDuration do
@@ -462,7 +355,7 @@ local function ExecuteTP()
                 local khrp = GetHRP(killer)
                 if khrp then
                     local lv = khrp.CFrame.LookVector.Unit
-                    local bp = khrp.Position - (lv * behindDist)
+                    local bp = khrp.Position - (lv * Config.BehindDist)
                     local tp = Vector3.new(bp.X, phrp.Position.Y, bp.Z)
                     phrp.CFrame = CFrame.new(tp, tp + lv)
                 end
@@ -470,11 +363,11 @@ local function ExecuteTP()
             task.wait()
         end
         
-        isTPActive = false
+        State.isTPActive = false
         return true
     else
-        isTPActive = false
-        DebugLog("✗ TP falló")
+        State.isTPActive = false
+        DebugLog("TP falló")
         return false
     end
 end
@@ -483,103 +376,175 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not Config.Enabled then return end
     
-    if input.KeyCode == Enum.KeyCode.ButtonL2 or input.KeyCode == Enum.KeyCode.Q then
-        task.spawn(ExecuteTP)
+    if input.KeyCode == Config.Keybind or input.KeyCode == Config.AlternativeKey then
+        task.spawn(TP)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if Config.ShowRange then
+        UpdateRangeIndicator()
+    elseif State.RangeIndicator then
+        State.RangeIndicator:Destroy()
+        State.RangeIndicator = nil
     end
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    isTPActive = false
-    task.wait(1)
+    State.isTPActive = false
+    if State.RangeIndicator then
+        State.RangeIndicator:Destroy()
+        State.RangeIndicator = nil
+    end
 end)
 
-local Dagger = {
-    State = function(enabled)
-        Config.Enabled = enabled == true
-        DebugLog("Estado:", enabled and "Activado" or "Desactivado")
-        if not enabled then
-            StopRangeUpdater()
-        elseif Config.ShowRange then
-            StartRangeUpdater()
-        end
-    end,
-    
-    SetBehindMode = function(mode)
-        if mode == "standard" or mode == "larger" then
-            Config.Behind.Mode = mode
-            DebugLog("Modo detrás cambiado a:", mode)
-            if Config.ShowRange then
-                UpdateRangeCircle()
-            end
-        else
-            DebugLog("Modo inválido. Usa: standard, larger")
-        end
-    end,
-    
-    SetFrontMode = function(mode)
-        if mode == "rodear" or mode == "standard" then
-            Config.Front.Mode = mode
-            DebugLog("Modo enfrente cambiado a:", mode)
-            if Config.ShowRange then
-                UpdateRangeCircle()
-            end
-        else
-            DebugLog("Modo inválido. Usa: rodear, standard")
-        end
-    end,
-    
-    SetCooldown = function(value)
+function Dagger.State(enabled)
+    Config.Enabled = enabled == true
+    DebugLog("Estado:", enabled and "Activado" or "Desactivado")
+    return Config.Enabled
+end
+
+function Dagger.Range(value)
+    if value then
+        Config.Range = tonumber(value) or 15
+        DebugLog("Rango:", Config.Range)
+    end
+    return Config.Range
+end
+
+function Dagger.BehindDist(value)
+    if value then
+        Config.BehindDist = tonumber(value) or 2.1
+        DebugLog("Distancia detrás:", Config.BehindDist)
+    end
+    return Config.BehindDist
+end
+
+function Dagger.Cooldown(value)
+    if value then
         Config.Cooldown = tonumber(value) or 1.5
         DebugLog("Cooldown:", Config.Cooldown)
-    end,
-    
-    SetHold = function(value)
-        Config.HoldDuration = tonumber(value) or 0.5
-        DebugLog("Hold duration:", Config.HoldDuration)
-    end,
-    
-    SetDebug = function(enabled)
-        Config.Debug = enabled == true
-        DebugLog("Debug:", enabled and "Activado" or "Desactivado")
-    end,
-    
-    Ratio = function(enabled)
-        Config.ShowRange = enabled == true
-        
-        if enabled then
-            DebugLog("Mostrando rango...")
-            CreateRangeCircle()
-            StartRangeUpdater()
-        else
-            DebugLog("Ocultando rango...")
-            StopRangeUpdater()
-        end
-    end,
-    
-    GetStatus = function()
-        print("=== DAGGER STATUS ===")
-        print("Estado:", Config.Enabled and "Activado" or "Desactivado")
-        print("Modo Detrás:", Config.Behind.Mode)
-        print("Modo Enfrente:", Config.Front.Mode)
-        print("Cooldown:", Config.Cooldown)
-        print("Hold Duration:", Config.HoldDuration)
-        print("Mostrar Rango:", Config.ShowRange and "Sí" or "No")
-        print("TP Activo:", isTPActive)
-        print("Último TP:", LastTP)
-        print("Modo Actual:", CurrentMode or "Ninguno")
-        print("Rango Actual:", CurrentRange)
-        print("Killer:", GetKiller() and GetKiller().Name or "No encontrado")
-        print("=====================")
-    end,
-    
-    GetConfig = function()
-        return Config
     end
-}
+    return Config.Cooldown
+end
+
+function Dagger.Hold(value)
+    if value then
+        Config.HoldDuration = tonumber(value) or 0.5
+        DebugLog("Duración de mantenimiento:", Config.HoldDuration)
+    end
+    return Config.HoldDuration
+end
+
+function Dagger.Speed(value)
+    if value then
+        Config.TweenDuration = tonumber(value) or 0.08
+        DebugLog("Velocidad:", Config.TweenDuration)
+    end
+    return Config.TweenDuration
+end
+
+function Dagger.Smart(enabled)
+    if enabled ~= nil then
+        Config.SmartMovement = enabled == true
+        DebugLog("Movimiento inteligente:", Config.SmartMovement and "Activado" or "Desactivado")
+    end
+    return Config.SmartMovement
+end
+
+function Dagger.ArcHeight(value)
+    if value then
+        Config.ArcHeight = tonumber(value) or 1.8
+        DebugLog("Altura del arco:", Config.ArcHeight)
+    end
+    return Config.ArcHeight
+end
+
+function Dagger.Debug(enabled)
+    if enabled ~= nil then
+        Config.Debug = enabled == true
+        DebugLog("Debug:", Config.Debug and "Activado" or "Desactivado")
+    end
+    return Config.Debug
+end
+
+function Dagger.Ratio(enabled)
+    if enabled ~= nil then
+        Config.ShowRange = enabled == true
+        DebugLog("Indicador de rango:", Config.ShowRange and "Activado" or "Desactivado")
+        if not Config.ShowRange and State.RangeIndicator then
+            State.RangeIndicator:Destroy()
+            State.RangeIndicator = nil
+        end
+    end
+    return Config.ShowRange
+end
+
+function Dagger.Keybind(key)
+    if key then
+        if type(key) == "string" then
+            key = Enum.KeyCode[key]
+        end
+        if key then
+            Config.Keybind = key
+            DebugLog("Tecla principal:", Config.Keybind.Name)
+        end
+    end
+    return Config.Keybind
+end
+
+function Dagger.AltKey(key)
+    if key then
+        if type(key) == "string" then
+            key = Enum.KeyCode[key]
+        end
+        if key then
+            Config.AlternativeKey = key
+            DebugLog("Tecla alternativa:", Config.AlternativeKey.Name)
+        end
+    end
+    return Config.AlternativeKey
+end
+
+function Dagger.GetStatus()
+    print("=== DAGGER STATUS ===")
+    print("Estado:", Config.Enabled and "Activado" or "Desactivado")
+    print("Rango:", Config.Range)
+    print("Distancia detrás:", Config.BehindDist)
+    print("Cooldown:", Config.Cooldown)
+    print("Duración de mantenimiento:", Config.HoldDuration)
+    print("Velocidad:", Config.TweenDuration, "s")
+    print("Movimiento inteligente:", Config.SmartMovement and "Activado" or "Desactivado")
+    print("Altura del arco:", Config.ArcHeight)
+    print("Indicador de rango:", Config.ShowRange and "Activado" or "Desactivado")
+    print("Debug:", Config.Debug and "Activado" or "Desactivado")
+    print("Tecla principal:", Config.Keybind.Name)
+    print("Tecla alternativa:", Config.AlternativeKey.Name)
+    print("TP Activo:", State.isTPActive)
+    print("Killer:", GetKiller() and GetKiller().Name or "No encontrado")
+    print("======================")
+end
+
+function Dagger.TP()
+    return TP()
+end
 
 DebugLog("=== DAGGER LOADED ===")
-DebugLog("Modo detrás:", Config.Behind.Mode)
-DebugLog("Modo enfrente:", Config.Front.Mode)
-DebugLog("Usa Dagger.Ratio(true) para mostrar el rango")
+DebugLog("Usa Dagger.GetStatus() para ver configuración")
+DebugLog("Comandos disponibles:")
+DebugLog("  Dagger.State(true/false) - Activar/desactivar")
+DebugLog("  Dagger.Ratio(true/false) - Mostrar indicador de rango")
+DebugLog("  Dagger.Range(numero) - Cambiar rango")
+DebugLog("  Dagger.BehindDist(numero) - Cambiar distancia detrás")
+DebugLog("  Dagger.Cooldown(numero) - Cambiar cooldown")
+DebugLog("  Dagger.Hold(numero) - Cambiar duración de mantenimiento")
+DebugLog("  Dagger.Speed(numero) - Cambiar velocidad (0.05-0.2)")
+DebugLog("  Dagger.Smart(true/false) - Activar movimiento inteligente")
+DebugLog("  Dagger.ArcHeight(numero) - Cambiar altura del arco")
+DebugLog("  Dagger.Keybind('Q') - Cambiar tecla principal")
+DebugLog("  Dagger.AltKey('ButtonL2') - Cambiar tecla alternativa")
+DebugLog("  Dagger.Debug(true/false) - Activar/desactivar debug")
+DebugLog("  Dagger.GetStatus() - Ver estado actual")
+DebugLog("  Dagger.TP() - Ejecutar TP manualmente")
 
 return Dagger
