@@ -694,7 +694,6 @@ function APTX:CreateContentArea(parent)
         ClipsDescendants = true,
     }, parent)
     newC(content, CORNER_R)
-    -- No UIPadding here — sections manage their own padding internally
     APTX.ContentArea = content
 end
 
@@ -710,6 +709,22 @@ function APTX:CreateHideButton()
         BorderSizePixel = 0,
         AutoButtonColor = false,
     }, APTX.GUI)
+    
+    local inverseScale = Instance.new("UIScale")
+    inverseScale.Name = "InverseScale"
+    inverseScale.Parent = hideBtn
+    
+    local function updateInverseScale()
+        if APTX._scale and APTX._scale ~= 0 then
+            inverseScale.Scale = 1 / APTX._scale
+        end
+    end
+    
+    local scaleConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateInverseScale)
+    table.insert(APTX._connections, scaleConn)
+    
+    updateInverseScale()
+    
     local hideIcon = newI("chevron-up", 26, hideBtn)
     hideIcon.AnchorPoint = Vector2.new(0.5, 0.5)
     hideIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -732,15 +747,12 @@ function APTX:ToggleVisibility()
     APTX.IsVisible = not APTX.IsVisible
 
     if APTX.IsVisible then
-        -- Restore last dragged position instead of hardcoded offset
-        -- FIX #2a: use saved position so drag is preserved after hide/show
         local restorePos = APTX._lastVisiblePos or UDim2.new(0.5, -(APTX.MainFrame.Size.X.Offset / 2), 0.5, -(APTX.MainFrame.Size.Y.Offset / 2))
         for _, s in ipairs({APTX.Shadow1, APTX.Shadow2, APTX.Shadow3}) do
             if s then s.Visible = true end
         end
         tw(APTX.MainFrame, {Position = restorePos}, TI_BOUNCE)
     else
-        -- Save current position before hiding
         APTX._lastVisiblePos = APTX.MainFrame.Position
         tw(APTX.MainFrame, {Position = UDim2.new(0.5, -(APTX.MainFrame.Size.X.Offset / 2), 1.5, 0)}, TI_BOUNCE)
         task.delay(TI_BOUNCE.Time, function()
@@ -752,7 +764,6 @@ function APTX:ToggleVisibility()
         end)
     end
 
-    -- FIX #6: Update HideButton icon to reflect current state (button stays at top-center always)
     if APTX.HideButton then
         local icon = APTX.HideButton:FindFirstChild("Icon")
         if icon then
@@ -762,7 +773,6 @@ function APTX:ToggleVisibility()
 end
 
 function APTX:Destroy()
-    -- Clean up ALL component connections (section-level + per-component)
     for _, section in ipairs(APTX.Sections) do
         -- Section-level connections
         if section._compRef and section._compRef._connections then
