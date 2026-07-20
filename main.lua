@@ -1,32 +1,31 @@
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-
 local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
 
 local Icons = loadstring(game:HttpGet("https://raw.githubusercontent.com/Angelarenotfound/APTX/refs/heads/main/modules/icons.lua"))() or {}
 
 local Theme = {
-    Background = Color3.fromRGB(0, 0, 0),           -- #000000
-    Surface = Color3.fromRGB(7, 7, 7),               -- #070707
-    Card = Color3.fromRGB(15, 15, 15),               -- #0f0f0f
+    Background = Color3.fromRGB(0, 0, 0),
+    Surface = Color3.fromRGB(7, 7, 7),
+    Card = Color3.fromRGB(15, 15, 15),
     CardHover = Color3.fromRGB(20, 20, 20),
-    Border = Color3.fromRGB(25, 25, 25),             -- rgba(192,192,192,0.10)
-    BorderHover = Color3.fromRGB(56, 56, 56),        -- rgba(255,255,255,0.22)
-    Accent = Color3.fromRGB(192, 192, 192),          -- Silver brand-mid #c0c0c0
-    Success = Color3.fromRGB(34, 197, 94),           -- #22c55e
-    Warning = Color3.fromRGB(245, 158, 11),          -- #f59e0b
-    Error = Color3.fromRGB(239, 68, 68),             -- #ef4444
-    TextPrimary = Color3.fromRGB(237, 237, 237),     -- rgba(255,255,255,0.93)
-    TextSecondary = Color3.fromRGB(128, 128, 128),   -- rgba(255,255,255,0.50)
-    TextDisabled = Color3.fromRGB(46, 46, 46),       -- rgba(255,255,255,0.18)
+    Border = Color3.fromRGB(25, 25, 25),
+    BorderHover = Color3.fromRGB(56, 56, 56),
+    Accent = Color3.fromRGB(192, 192, 192),
+    Success = Color3.fromRGB(34, 197, 94),
+    Warning = Color3.fromRGB(245, 158, 11),
+    Error = Color3.fromRGB(239, 68, 68),
+    TextPrimary = Color3.fromRGB(237, 237, 237),
+    TextSecondary = Color3.fromRGB(128, 128, 128),
+    TextDisabled = Color3.fromRGB(46, 46, 46),
     SidebarActive = Color3.fromRGB(10, 10, 10),
     TopBar = Color3.fromRGB(5, 5, 5),
     Sidebar = Color3.fromRGB(3, 3, 3),
-    BrandLo = Color3.fromRGB(85, 85, 85),            -- #555555
-    BrandMid = Color3.fromRGB(192, 192, 192),        -- #c0c0c0
-    BrandHi = Color3.fromRGB(242, 242, 242),         -- #f2f2f2
-    -- DeltaVuln extras (logging, floating frames)
+    BrandLo = Color3.fromRGB(85, 85, 85),
+    BrandMid = Color3.fromRGB(192, 192, 192),
+    BrandHi = Color3.fromRGB(242, 242, 242),
     FloatingBg = Color3.fromRGB(5, 5, 5),
     FloatingBorder = Color3.fromRGB(30, 30, 30),
     LogDefault = Color3.fromRGB(180, 180, 180),
@@ -39,10 +38,8 @@ local Theme = {
     LogInfo = Color3.fromRGB(100, 180, 255),
 }
 
--- Weak table to register component references (avoids setting arbitrary properties on Roblox instances)
 local CompRegistry = setmetatable({}, { __mode = "k" })
 
--- Dimension constants (Xerion Design System)
 local TOP_BAR_H = 44
 local CARD_H = 44
 local SIDEBAR_W = 160
@@ -69,9 +66,12 @@ APTX.IsVisible = true
 APTX._connections = {}
 APTX._scale = 1
 APTX._sectionHideDelays = {}
-APTX._lastVisiblePos = nil  -- FIX #2b: track last visible position for restore after hide
+APTX._lastVisiblePos = nil
+APTX._floatingFrames = {}
+APTX._notifStack = {}
+APTX._keybindings = {}
+APTX._dialogStack = {}
 
--- Reference resolution for scaling
 local REF_W = 1920
 local REF_H = 1080
 
@@ -81,9 +81,6 @@ local TI_FAST = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.
 local TI_BACK = TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local TI_SLOW = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TI_BOUNCE = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
-
---- Helpers
 
 local function clamp(v, lo, hi)
     return math.max(lo, math.min(hi, v))
@@ -95,9 +92,6 @@ local function log(...)
     end
 end
 
--- Safe no-op proxy returned when a component fails to create.
--- Prevents "attempt to index nil with 'Edit'/'Disable'/etc." errors in user scripts
--- that call methods on the returned component without checking for nil.
 local function makeNilProxy(tag)
     local proxy = {}
     local mt = {
@@ -185,8 +179,6 @@ local function makeShadow(w, h, scale, trans)
 end
 
 local function makeOverlay(parent)
-    -- FIX #3: Use a dark semi-transparent overlay (not white). The black at 0.5
-    -- transparency creates a proper disabled dimming effect.
     local o = newF({
         Name = "_DisabledOverlay",
         Size = UDim2.new(1, 0, 1, 0),
@@ -231,8 +223,6 @@ local function makeDraggable(handle, target)
     return {c1, c2, c3, c4}
 end
 
---- Unified click handler for Frames (InputBegan + InputEnded, supports mouse + touch)
---- FIX: On touch, only fires if the finger didn't move significantly (prevents accidental clicks during scroll gestures)
 local function connectClick(frame, fn)
     local conns = {}
     local touchStart = nil
@@ -260,7 +250,6 @@ local function connectClick(frame, fn)
     return conns
 end
 
---- Card creation — Xerion-style: returns card frame, border stroke, and layout
 local function makeCard(parent)
     local c = newF({
         Name = "Card",
@@ -272,7 +261,6 @@ local function makeCard(parent)
     newC(c, 10)
     local borderStroke = newS(c, Theme.Border, 1)
 
-    -- Inner highlight stroke — Border mode only, never Contextual (avoids whitening child elements)
     do
         local ih = Instance.new("UIStroke")
         ih.Color = Theme.BrandLo
@@ -314,7 +302,6 @@ local function initHover(comp, card, stroke)
     table.insert(comp._connections, c2)
 end
 
---- Initialize the UIScale system for responsive design
 local function initResponsive()
     if not APTX.GUI then return end
     local existing = APTX.GUI:FindFirstChildOfClass("UIScale")
@@ -347,8 +334,6 @@ local function initResponsive()
     updateScale()
 end
 
---- Public API
-
 function APTX:Config(title, draggable, devmode)
     APTX.Title = title or "APTX GUI"
     APTX.Draggable = draggable ~= false
@@ -356,19 +341,17 @@ function APTX:Config(title, draggable, devmode)
     log("Inicializando APTX GUI...")
     APTX:CreateGUI()
     APTX:CreateHideButton()
+    APTX:InitKeybindSystem()
     log("GUI creado exitosamente")
     return APTX
 end
 
 function APTX:CreateGUI()
-    -- Clean up old connections before re-initializing
     for _, conn in ipairs(APTX._connections) do
         conn:Disconnect()
     end
     APTX._connections = {}
 
-    -- FIX #1: Destroy old shadow instances so their Position signals don't fire
-    -- against nil references after GUI is recreated (was causing "attempt to index nil with 'Edit'")
     if APTX.Shadow1 then APTX.Shadow1:Destroy(); APTX.Shadow1 = nil end
     if APTX.Shadow2 then APTX.Shadow2:Destroy(); APTX.Shadow2 = nil end
     if APTX.Shadow3 then APTX.Shadow3:Destroy(); APTX.Shadow3 = nil end
@@ -390,10 +373,8 @@ function APTX:CreateGUI()
     APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     APTX.GUI.Parent = playerGui
 
-    -- Responsive scaling
     initResponsive()
 
-    -- Detect mobile and adjust MainFrame size
     local isMobile = APTX.GUI.AbsoluteSize.X < 768
     local mfW = isMobile and math.min(580, APTX.GUI.AbsoluteSize.X - 16) or 580
     local mfH = isMobile and math.min(400, APTX.GUI.AbsoluteSize.Y - 16) or 400
@@ -408,7 +389,6 @@ function APTX:CreateGUI()
     newC(APTX.MainFrame, 12)
     newS(APTX.MainFrame, Theme.Border, 1)
 
-    -- Xerion ambient glow (top-center radial glow)
     local ambientGlow = newF({
         Name = "AmbientGlow",
         Size = UDim2.new(1, 0, 0, 200),
@@ -422,7 +402,6 @@ function APTX:CreateGUI()
         s.Position = UDim2.new(0.5, APTX.MainFrame.Position.X.Offset - (s.Size.X.Offset - mfW) / 2, 0.5, APTX.MainFrame.Position.Y.Offset - (s.Size.Y.Offset - mfH) / 2)
     end
 
-    -- Xerion multi-layered shadows (more dramatic)
     local s1 = makeShadow(mfW, mfH, 1, 0.82)
     newC(s1, 14)
     s1.Parent = APTX.GUI
@@ -467,7 +446,6 @@ function APTX:CreateGUI()
 end
 
 function APTX:CreateTopBar()
-    -- Xerion Navigation Bar — pure black, subtle border, silver typography
     local topBar = newF({
         Name = "TopBar",
         Size = UDim2.new(1, 0, 0, TOP_BAR_H),
@@ -483,7 +461,6 @@ function APTX:CreateTopBar()
     }, topBar)
     newS(topBar, Theme.Border, 1)
 
-    -- Title with Xerion silver aesthetic
     local titleContainer = newF({
         Size = UDim2.new(0, 240, 1, 0),
         Position = UDim2.new(0, PAD_SM, 0, 0),
@@ -514,14 +491,12 @@ function APTX:CreateTopBar()
         TextXAlignment = Enum.TextXAlignment.Left,
     }, titleContainer)
 
-    -- Window controls — Xerion style: subtle silver on hover
     local btnFrame = newF({
         Name = "WindowControls",
         Size = UDim2.new(0, 96, 0, BTN_H),
         Position = UDim2.new(1, -108, 0.5, -BTN_H/2),
         BackgroundTransparency = 1,
     }, topBar)
-    -- Use a layout so buttons never overlap regardless of size changes
     do
         local bl = Instance.new("UIListLayout")
         bl.FillDirection = Enum.FillDirection.Horizontal
@@ -531,7 +506,6 @@ function APTX:CreateTopBar()
         bl.Parent = btnFrame
     end
 
-    -- Minimize button
     local minBtn = newB({
         Name = "MinBtn",
         Size = UDim2.new(0, BTN_H, 0, BTN_H),
@@ -557,7 +531,6 @@ function APTX:CreateTopBar()
         APTX:ToggleVisibility()
     end)
 
-    -- Maximize button
     local maxBtn = newB({
         Name = "MaxBtn",
         Size = UDim2.new(0, BTN_H, 0, BTN_H),
@@ -572,7 +545,6 @@ function APTX:CreateTopBar()
     maxIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
     maxIcon.ImageColor3 = Color3.fromRGB(80, 80, 80)
 
-    -- Maximize functionality
     local isMaximized = false
     local originalSize = APTX.MainFrame.Size
     local originalPosition = APTX.MainFrame.Position
@@ -580,15 +552,12 @@ function APTX:CreateTopBar()
     local function toggleMaximize()
         isMaximized = not isMaximized
         if isMaximized then
-            -- Store original size and position
             originalSize = APTX.MainFrame.Size
             originalPosition = APTX.MainFrame.Position
-            -- Maximize to fill most of the screen
             APTX.MainFrame.Size = UDim2.new(0.9, 0, 0.9, 0)
             APTX.MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
             APTX.MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         else
-            -- Restore original size and position
             APTX.MainFrame.Size = originalSize
             APTX.MainFrame.Position = originalPosition
             APTX.MainFrame.AnchorPoint = Vector2.new(0, 0)
@@ -605,7 +574,6 @@ function APTX:CreateTopBar()
     end)
     maxBtn.MouseButton1Click:Connect(toggleMaximize)
 
-    -- Close button
     local closeBtn = newB({
         Name = "CloseBtn",
         Size = UDim2.new(0, BTN_H, 0, BTN_H),
@@ -642,7 +610,6 @@ function APTX:CreateSidebar(parent)
         BorderSizePixel = 0,
     }, parent)
     newC(sidebar, CORNER_R)
-    -- Xerion-style right divider: subtle silver line
     local rightBorder = newF({
         Size = UDim2.new(0, 1, 1, 0),
         Position = UDim2.new(1, -1, 0, 0),
@@ -774,14 +741,12 @@ end
 
 function APTX:Destroy()
     for _, section in ipairs(APTX.Sections) do
-        -- Section-level connections
         if section._compRef and section._compRef._connections then
             for _, conn in ipairs(section._compRef._connections) do
                 conn:Disconnect()
             end
             section._compRef._connections = {}
         end
-        -- Per-component connections (Sliders: UIS.InputChanged, Menus: UIS.InputBegan, etc.)
         if section.Container then
             for _, child in ipairs(section.Container:GetChildren()) do
                 local childComp = CompRegistry[child]
@@ -796,26 +761,23 @@ function APTX:Destroy()
         end
     end
 
-    -- Clean up main connections
     for _, conn in ipairs(APTX._connections) do
         conn:Disconnect()
     end
     APTX._connections = {}
 
-    -- Cancel any pending section hide delays
     for _, threadId in pairs(APTX._sectionHideDelays) do
         pcall(task.cancel, threadId)
     end
     APTX._sectionHideDelays = {}
 
-    -- Clean up floating frames
     for _, ff in ipairs(APTX._floatingFrames) do
         pcall(function() ff:Destroy() end)
     end
     APTX._floatingFrames = {}
 
-    -- Clear notification stack
     APTX._notifStack = {}
+    APTX._keybindings = {}
 
     APTX.Sections = {}
     APTX.CurrentSection = nil
@@ -825,8 +787,6 @@ function APTX:Destroy()
     end
 end
 
---- Component initialization
-
 local function initComponent(comp, frame, sectionRef)
     comp._frame = frame
     comp._disabled = false
@@ -835,6 +795,7 @@ local function initComponent(comp, frame, sectionRef)
     comp._connections = {}
     comp._tooltipObj = nil
     comp._tooltipCons = nil
+    comp._tweens = {}
     CompRegistry[frame] = comp
 
     function comp:Remove()
@@ -870,7 +831,6 @@ local function initComponent(comp, frame, sectionRef)
         self._disabled = true
         if self._frame then
             self._overlay = makeOverlay(self._frame)
-            -- Disable scrolling on ScrollingFrame to prevent bypass
             if self._frame:IsA("ScrollingFrame") then
                 self._frame.ScrollingEnabled = false
             end
@@ -883,7 +843,6 @@ local function initComponent(comp, frame, sectionRef)
         if self._overlay then
             self._overlay:Destroy()
             self._overlay = nil
-            -- Re-enable scrolling
             if self._frame:IsA("ScrollingFrame") then
                 self._frame.ScrollingEnabled = true
             end
@@ -978,8 +937,6 @@ local function initComponent(comp, frame, sectionRef)
         local tipVisible = false
         local showThread = nil
 
-        -- FIX #8: Assign tooltipObj immediately so comp:Remove() can always destroy
-        -- the tooltip instance, even if called during the show-delay window.
         self._tooltipObj = tip
 
         local function showTooltip()
@@ -1042,19 +999,15 @@ local function initComponent(comp, frame, sectionRef)
         end)
 
         self._tooltipCons = {hEnter, hLeave}
-        -- FIX #8b: _tooltipObj already assigned above at creation time (not here at the end)
     end
 
     return comp
 end
 
---- Animate cards entering a section for the first time
--- Uses pure fade-in (positions are managed by UIListLayout)
 local TI_ENTRY_FADE = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function animEntry(container)
     if not container then return end
-    -- Collect all non-layout children
     local cards = {}
     for _, child in ipairs(container:GetChildren()) do
         if not child:IsA("UIListLayout") and not child:IsA("UIPadding")
@@ -1062,12 +1015,10 @@ local function animEntry(container)
             table.insert(cards, child)
         end
     end
-    -- Animate each with staggered delay
     for idx, card in ipairs(cards) do
         local stagger = (idx - 1) * 0.04
 
         if card:IsA("TextLabel") then
-            -- Labels: only fade text, never touch background
             card.TextTransparency = 1
             task.delay(stagger, function()
                 local ok, err = pcall(function()
@@ -1078,7 +1029,6 @@ local function animEntry(container)
             end)
 
         elseif card:IsA("Frame") then
-            -- Top-level card frames: snapshot original transparency and fade in from invisible
             local origBGT = card.BackgroundTransparency
             card.BackgroundTransparency = 1
             task.delay(stagger, function()
@@ -1092,12 +1042,8 @@ local function animEntry(container)
                             tw(child, {TextTransparency = 0}, TI_ENTRY_FADE)
 
                         elseif child:IsA("TextButton") then
-                            -- IMPORTANT: only animate text, never override BackgroundTransparency.
-                            -- Many buttons (dropBtn, overlayBtn) are intentionally fully transparent (=1).
-                            -- Fading their background to 0 makes them render as white opaque blocks.
                             child.TextTransparency = 1
                             tw(child, {TextTransparency = 0}, TI_ENTRY_FADE)
-                            -- Only fade background if it was already meant to be visible (< 0.9)
                             if child.BackgroundTransparency < 0.9 then
                                 local origT = child.BackgroundTransparency
                                 child.BackgroundTransparency = 1
@@ -1115,7 +1061,6 @@ local function animEntry(container)
 
                         elseif child:IsA("Frame") and child.Name ~= "Icon"
                             and child.Name ~= "_DisabledOverlay" then
-                            -- Only fade sub-frames that are visible (not overlays already at 0.5+)
                             if child.BackgroundTransparency < 0.9 then
                                 local origT = child.BackgroundTransparency
                                 child.BackgroundTransparency = 1
@@ -1128,13 +1073,10 @@ local function animEntry(container)
             end)
 
         else
-            -- ScrollingFrame and other non-Frame/non-Label: just appear
             card.Visible = true
         end
     end
 end
-
---- Section
 
 function APTX:Section(text, icon, default)
     local ok, result = pcall(function()
@@ -1159,7 +1101,6 @@ function APTX:Section(text, icon, default)
         }, APTX.SectionList)
         newC(section.Button, 8)
 
-        -- Xerion silver accent bar (left border indicator)
         local accentBar = newF({
             Name = "AccentBar",
             Size = UDim2.new(0, 3, 1, 0),
@@ -1181,7 +1122,6 @@ function APTX:Section(text, icon, default)
             iconLabel.Position = UDim2.new(0, 0, 0.5, -8)
         end
 
-        -- Xerion label — silver muted by default, bright on active
         local label = newL({
             Name = "Label",
             Size = UDim2.new(1, icon and -24 or 0, 1, 0),
@@ -1213,13 +1153,11 @@ function APTX:Section(text, icon, default)
         compLayout.Padding = UDim.new(0, 6)
         compLayout.Parent = section.Container
 
-        -- Top/bottom padding inside the section scroll area
         local sectionPad = Instance.new("UIPadding")
         sectionPad.PaddingTop = UDim.new(0, 6)
         sectionPad.PaddingBottom = UDim.new(0, 8)
         sectionPad.Parent = section.Container
 
-        -- Empty state placeholder label
         local emptyLabel = newL({
             Name = "_EmptyPlaceholder",
             Size = UDim2.new(1, 0, 0, 36),
@@ -1245,17 +1183,14 @@ function APTX:Section(text, icon, default)
                 end
             end
             emptyLabel.Visible = not hasContent
-            -- +14 accounts for 6px PaddingTop + 8px PaddingBottom from sectionPad
             section.Container.CanvasSize = UDim2.new(0, 0, 0, compLayout.AbsoluteContentSize.Y + 14)
         end
 
         local layoutConn = compLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(syncCanvas)
         table.insert(sectionComp._connections, layoutConn)
 
-        -- FIX: Ensure CanvasSize is synced after initial layout computation
         task.defer(syncCanvas)
 
-        -- Track button connections so they can be cleaned up
         local btnClickConn = section.Button.MouseButton1Click:Connect(function()
             APTX:SelectSection(text)
         end)
@@ -1291,7 +1226,6 @@ function APTX:Section(text, icon, default)
             end
             sectionComp._connections = {}
             if section.Container then
-                -- Clean up all CompRegistry entries for children and container
                 for _, child in ipairs(section.Container:GetChildren()) do
                     CompRegistry[child] = nil
                 end
@@ -1320,7 +1254,6 @@ function APTX:Section(text, icon, default)
         function sectionComp:Clear()
             local toRemove = {}
             for _, child in ipairs(section.Container:GetChildren()) do
-                -- Skip layout, padding, and empty placeholder; remove everything else
                 if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") and child.Name ~= "_EmptyPlaceholder" then
                     table.insert(toRemove, child)
                 end
@@ -1350,11 +1283,8 @@ end
 function APTX:SelectSection(name)
     for _, section in ipairs(APTX.Sections) do
         if section.Name == name then
-            -- Activate this section immediately
             section.Container.Visible = true
-            -- FIX: Reset scroll position when switching sections
             section.Container.CanvasPosition = Vector2.new(0, 0)
-            -- FIX: Auto-scroll sidebar to show active section button
             if APTX.SectionList and section.Button then
                 local btnAbsY = section.Button.AbsolutePosition.Y
                 local scrollAbsY = APTX.SectionList.AbsolutePosition.Y
@@ -1366,13 +1296,11 @@ function APTX:SelectSection(name)
                     APTX.SectionList.CanvasPosition = Vector2.new(0, newY)
                 end
             end
-            -- Animate entry on first open
             if not section._entered then
                 section._entered = true
                 animEntry(section.Container)
             end
 
-            -- Xerion active state: dark active bg + silver accent bar + bright text
             section.Button.BackgroundColor3 = Theme.SidebarActive
             section.Button.BackgroundTransparency = 0
             local bar = section.Button:FindFirstChild("AccentBar")
@@ -1386,7 +1314,6 @@ function APTX:SelectSection(name)
             if lbl2 then lbl2.TextColor3 = Theme.BrandHi end
             APTX.CurrentSection = name
         else
-            -- Hide inactive sections immediately (no delay)
             section.Container.Visible = false
 
             section.Button.BackgroundTransparency = 1
@@ -1412,8 +1339,6 @@ function APTX:GetSection(name)
     return nil
 end
 
---- Button component
-
 function APTX:Button(sectionName, text, icon, callback)
     if type(icon) == "function" then
         callback = icon
@@ -1428,7 +1353,6 @@ function APTX:Button(sectionName, text, icon, callback)
 
         local card, stroke, layout = makeCard(section.Container)
         card.Size = UDim2.new(1, 0, 0, CARD_H)
-        -- Keep the UIListLayout from makeCard — it handles icon + label alignment automatically
 
         local iconImg
         if icon then
@@ -1454,13 +1378,11 @@ function APTX:Button(sectionName, text, icon, callback)
 
         initHover(comp, card, stroke)
 
-        -- Track tweens and their connections for proper cleanup
         comp._tweens = {}
 
         local clickConns = connectClick(card, function()
             if comp._disabled then return end
 
-            -- Cancel previous pending tweens to prevent overlap
             for _, t in ipairs(comp._tweens) do
                 t:Cancel()
             end
@@ -1499,6 +1421,15 @@ function APTX:Button(sectionName, text, icon, callback)
             if params.callback then
                 cb = params.callback
             end
+            if params.loading then
+                if params.loading then
+                    comp:Disable()
+                    label.Text = params.loadingText or "Cargando..."
+                else
+                    comp:Enable()
+                    label.Text = params.text or text
+                end
+            end
         end
 
         return comp
@@ -1509,8 +1440,6 @@ function APTX:Button(sectionName, text, icon, callback)
     end
     return result
 end
-
---- Toggle component
 
 function APTX:Toggle(sectionName, text, icon, default, callback)
     if type(icon) == "function" then
@@ -1529,7 +1458,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
 
         local card, stroke, layout = makeCard(section.Container)
         card.Size = UDim2.new(1, 0, 0, CARD_H)
-        -- Keep UIListLayout from makeCard for icon + label
 
         local iconImg
         if icon then
@@ -1539,7 +1467,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
 
         local label = newL({
             Name = "Label",
-            -- Fill all horizontal space except the track (48px)
             Size = UDim2.new(1, -(icon and 16+8 or 0) - 52, 1, 0),
             LayoutOrder = 2,
             BackgroundTransparency = 1,
@@ -1550,7 +1477,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             TextXAlignment = Enum.TextXAlignment.Left,
         }, card)
 
-        -- Track placed absolutely at right edge; UIListLayout handles left content
         local track = newB({
             Name = "Track",
             Size = UDim2.new(0, 44, 0, 24),
@@ -1562,7 +1488,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
             ZIndex = 2,
         }, card)
         newC(track, CORNER_R)
-        -- Xerion silver border on track
         local trackStroke = newS(track, Theme.Border, 1)
         trackStroke.Transparency = 0.5
 
@@ -1584,7 +1509,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         local function setToggleState(state, instant)
             isOn = state
             local kPos = isOn and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-            -- Xerion silver toggle: white when on, dark when off
             local tColor = isOn and Color3.fromRGB(192, 192, 192) or Color3.fromRGB(30, 30, 30)
             local kColor = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(60, 60, 60)
             if instant then
@@ -1614,11 +1538,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
         end
 
         track.MouseButton1Click:Connect(toggleAction)
-
-        -- FIX #5: Removed connectClick(card, toggleAction) to prevent double-firing.
-        -- Clicking the track already bubbles correctly; adding a second InputBegan on
-        -- the parent card caused the toggle to fire twice (especially with Touch input).
-        -- The card hover area still works visually via initHover.
 
         track.MouseEnter:Connect(function()
             tw(knob, {Size = UDim2.new(0, 22, 0, 22)}, TI_HOVER)
@@ -1652,8 +1571,6 @@ function APTX:Toggle(sectionName, text, icon, default, callback)
     return result
 end
 
---- Slider component
-
 function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     if type(icon) == "function" then
         callback = icon
@@ -1672,6 +1589,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end
 
         local value = default or min
+        local step = 1
 
         local card, stroke, layout = makeCard(section.Container)
         card.Size = UDim2.new(1, 0, 0, 58)
@@ -1684,7 +1602,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         pad.PaddingBottom = UDim.new(0, 10)
         pad.Parent = card
 
-        -- Top row: icon + label + value. Height=18, anchored to top of padded area
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, 18),
             Position = UDim2.new(0, 0, 0, 0),
@@ -1721,8 +1638,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             TextXAlignment = Enum.TextXAlignment.Right,
         }, topRow)
 
-        -- Track: 6px tall, positioned 8px below topRow (18+8=26px from padded top)
-        -- Touch-friendly hit area (44px tall, centered on track for mobile usability)
         local trackHitbox = newF({
             Name = "TrackHitbox",
             Size = UDim2.new(1, 0, 0, 44),
@@ -1741,7 +1656,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             Active = true,
         }, trackHitbox)
         newC(track, 3)
-        -- Xerion silver border on track
         local trackBorder = newS(track, Theme.Border, 1)
         trackBorder.Transparency = 0.7
 
@@ -1761,7 +1675,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             BorderSizePixel = 0,
         }, track)
         newC(knob, 9)
-        -- Xerion silver border on knob
         local knobBorder = newS(knob, Color3.fromRGB(255, 255, 255), 1)
         knobBorder.Transparency = 0.6
 
@@ -1779,14 +1692,18 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
             local trackW = track.AbsoluteSize.X
             if trackW <= 0 then return end
             local pos = clamp(relX / trackW, 0, 1)
-            value = math.floor(min + (max - min) * pos + 0.5)
+            local rawValue = min + (max - min) * pos
+            if step and step > 0 then
+                rawValue = math.round(rawValue / step) * step
+            end
+            value = clamp(rawValue, min, max)
             valueLabel.Text = tostring(value)
-            fill.Size = UDim2.new(pos, 0, 1, 0)
-            knob.Position = UDim2.new(pos, -9, 0.5, -9)
+            local newPos = (value - min) / (max - min)
+            fill.Size = UDim2.new(newPos, 0, 1, 0)
+            knob.Position = UDim2.new(newPos, -9, 0.5, -9)
             if cb then cb(value) end
         end
 
-        -- Track these connections so they can be cleaned up
         local ibConn = trackHitbox.InputBegan:Connect(function(input)
             if comp._disabled then return end
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1797,7 +1714,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         end)
         table.insert(comp._connections, ibConn)
 
-        -- FIX: Use UserInputService.InputEnded so dragging stops even if finger leaves the track area
         local ieConn = UserInputService.InputEnded:Connect(function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
                 dragging = false
@@ -1816,6 +1732,7 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
         function comp:Edit(params)
             params = params or {}
             if params.text then label.Text = params.text end
+            if params.step then step = params.step end
             local minChanged = params.min ~= nil
             local maxChanged = params.max ~= nil
             if minChanged then min = params.min end
@@ -1823,7 +1740,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
                 max = params.max
                 if max == min then max = min + 1 end
             end
-            -- Re-clamp value after min/max changes
             if minChanged or maxChanged then
                 value = clamp(value, min, max)
                 local pos = (value - min) / (max - min)
@@ -1862,8 +1778,6 @@ function APTX:Slider(sectionName, text, icon, min, max, default, callback)
     return result
 end
 
---- Menu component
-
 function APTX:Menu(sectionName, text, placeholder, icon, options, default, callback)
     local ok, result = pcall(function()
         local section = APTX:GetSection(sectionName)
@@ -1871,7 +1785,6 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
             error("Section not found: " .. tostring(sectionName))
         end
 
-        -- Validate options before any UI is created
         if not options or #options == 0 then
             options = {"(sin opciones)"}
         end
@@ -1891,7 +1804,6 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         pad.PaddingRight = UDim.new(0, PAD_SM)
         pad.Parent = card
 
-        -- topRow fills the header portion only (CARD_H height, not the whole expanding card)
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, CARD_H),
             Position = UDim2.new(0, 0, 0, 0),
@@ -1958,12 +1870,9 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         local function closeOutside(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 if isOpen then
-                    -- FIX #4: Use AbsolutePosition/Size which already account for scroll offset and UIScale
-                    -- These are updated by Roblox in real time regardless of ScrollingFrame position
                     local pos = input.Position
                     local absPos = card.AbsolutePosition
                     local absSize = card.AbsoluteSize
-                    -- FIX: absSize.Y already reflects the expanded card height; only add a small margin
                     local expandedH = absSize.Y + 10
                     if pos.X < absPos.X or pos.X > absPos.X + absSize.X
                         or pos.Y < absPos.Y or pos.Y > absPos.Y + expandedH then
@@ -2045,7 +1954,6 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
         end
 
         rebuildOptions()
-        -- FIX: Show the default/selected option in the header label
         if selected then label.Text = selected end
 
         dropBtn.MouseButton1Click:Connect(function()
@@ -2078,12 +1986,40 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
             if params.selected then
                 selected = params.selected
                 label.Text = selected
+                for _, btn in ipairs(optionBtns) do
+                    local ol = btn:FindFirstChildOfClass("TextLabel")
+                    local cm = btn:FindFirstChild("Checkmark")
+                    if ol then ol.TextColor3 = Theme.TextSecondary end
+                    if cm then cm.Text = "" end
+                    local btnLabel = btn:FindFirstChildOfClass("TextLabel")
+                    if btnLabel and btnLabel.Text == selected then
+                        btnLabel.TextColor3 = Theme.Accent
+                        if cm then cm.Text = "✓" end
+                    end
+                end
             end
             if params.callback then cb = params.callback end
         end
 
         function comp:GetValue()
             return selected
+        end
+
+        function comp:Select(value)
+            for _, btn in ipairs(optionBtns) do
+                local ol = btn:FindFirstChildOfClass("TextLabel")
+                local cm = btn:FindFirstChild("Checkmark")
+                if ol and ol.Text == value then
+                    selected = value
+                    label.Text = selected
+                    if ol then ol.TextColor3 = Theme.Accent end
+                    if cm then cm.Text = "✓" end
+                    if cb then cb(selected) end
+                else
+                    if ol then ol.TextColor3 = Theme.TextSecondary end
+                    if cm then cm.Text = "" end
+                end
+            end
         end
 
         function comp:SetOptions(newOptions)
@@ -2100,8 +2036,6 @@ function APTX:Menu(sectionName, text, placeholder, icon, options, default, callb
     end
     return result
 end
-
---- Input component
 
 function APTX:Input(sectionName, text, icon, placeholder, callback)
     local ok, result = pcall(function()
@@ -2121,7 +2055,6 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
         pad.PaddingBottom = UDim.new(0, 8)
         pad.Parent = card
 
-        -- Label row: 18px tall, at top of padded area
         local topRow = newF({
             Size = UDim2.new(1, 0, 0, 18),
             Position = UDim2.new(0, 0, 0, 0),
@@ -2146,7 +2079,6 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
             TextXAlignment = Enum.TextXAlignment.Left,
         }, topRow)
 
-        -- InputBox: 22px tall, 4px below topRow (18+4=22px from padded top)
         local inputBox = Instance.new("TextBox")
         inputBox.Name = "InputBox"
         inputBox.Size = UDim2.new(1, 0, 0, 22)
@@ -2214,8 +2146,6 @@ function APTX:Input(sectionName, text, icon, placeholder, callback)
     return result
 end
 
---- Label component
-
 function APTX:Label(sectionName, text)
     local ok, result = pcall(function()
         local section = APTX:GetSection(sectionName)
@@ -2276,17 +2206,1063 @@ function APTX:Label(sectionName, text)
     return result
 end
 
---- Notification system
+function APTX:Separator(sectionName, text)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local sep = newF({
+            Name = "Separator",
+            Size = UDim2.new(1, 0, 0, 30),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, section.Container)
+
+        local line = newF({
+            Name = "Line",
+            Size = UDim2.new(1, 0, 0, 1),
+            Position = UDim2.new(0, 0, 0.5, -0.5),
+            BackgroundColor3 = Theme.Border,
+            BorderSizePixel = 0,
+        }, sep)
+
+        if text and text ~= "" then
+            local label = newL({
+                Name = "Label",
+                Size = UDim2.new(0, 0, 1, 0),
+                Position = UDim2.new(0.5, 0, 0, 0),
+                BackgroundTransparency = 1,
+                Text = text,
+                TextColor3 = Theme.TextSecondary,
+                Font = Enum.Font.GothamMedium,
+                TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextScaled = false,
+            }, sep)
+            
+            local function updateLabelSize()
+                local textW = label.TextBounds.X + 16
+                label.Size = UDim2.new(0, math.min(textW, 300), 1, 0)
+                label.Position = UDim2.new(0.5, -textW/2, 0, 0)
+            end
+            
+            label:GetPropertyChangedSignal("Text"):Connect(updateLabelSize)
+            task.defer(updateLabelSize)
+            
+            local bg = newF({
+                Name = "Background",
+                Size = UDim2.new(1, 12, 1, 0),
+                Position = UDim2.new(0.5, -6, 0, 0),
+                BackgroundColor3 = Theme.Surface,
+                BackgroundTransparency = 0,
+                BorderSizePixel = 0,
+            }, sep)
+            label.Parent = bg
+        end
+
+        local comp = {}
+        initComponent(comp, sep, section)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then
+                local label = sep:FindFirstChild("Label")
+                if label then label.Text = params.text end
+            end
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Separator] Error creando componente: " .. tostring(result))
+        return makeNilProxy("Separator")
+    end
+    return result
+end
+
+function APTX:GroupBox(sectionName, title, params)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        params = params or {}
+        local height = params.height or 100
+        local collapsible = params.collapsible or false
+        local defaultCollapsed = params.collapsed or false
+
+        local container = newF({
+            Name = "GroupBox_" .. title,
+            Size = UDim2.new(1, 0, 0, height + 32),
+            BackgroundColor3 = Theme.Card,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            Active = true,
+        }, section.Container)
+        newC(container, 8)
+        local border = newS(container, Theme.Border, 1)
+
+        local header = newF({
+            Name = "Header",
+            Size = UDim2.new(1, 0, 0, 32),
+            BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+            BorderSizePixel = 0,
+        }, container)
+
+        local titleLabel = newL({
+            Name = "Title",
+            Size = UDim2.new(1, -40, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = title,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, header)
+
+        local content = newF({
+            Name = "Content",
+            Size = UDim2.new(1, -8, 0, height),
+            Position = UDim2.new(0, 4, 0, 36),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, container)
+
+        local contentLayout = Instance.new("UIListLayout")
+        contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        contentLayout.Padding = UDim.new(0, 4)
+        contentLayout.Parent = content
+
+        local contentPad = Instance.new("UIPadding")
+        contentPad.PaddingLeft = UDim.new(0, 4)
+        contentPad.PaddingRight = UDim.new(0, 4)
+        contentPad.PaddingTop = UDim.new(0, 4)
+        contentPad.PaddingBottom = UDim.new(0, 4)
+        contentPad.Parent = content
+
+        if collapsible then
+            local toggleBtn = newB({
+                Name = "ToggleBtn",
+                Size = UDim2.new(0, 32, 0, 32),
+                Position = UDim2.new(1, -36, 0, 0),
+                BackgroundTransparency = 1,
+                Text = defaultCollapsed and "▶" or "▼",
+                TextColor3 = Theme.TextSecondary,
+                TextSize = 12,
+                Font = Enum.Font.Gotham,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+            }, header)
+
+            local isCollapsed = defaultCollapsed
+            if isCollapsed then
+                content.Visible = false
+                container.Size = UDim2.new(1, 0, 0, 32)
+            end
+
+            toggleBtn.MouseButton1Click:Connect(function()
+                isCollapsed = not isCollapsed
+                content.Visible = not isCollapsed
+                toggleBtn.Text = isCollapsed and "▶" or "▼"
+                local newHeight = isCollapsed and 32 or (32 + height)
+                tw(container, {Size = UDim2.new(1, 0, 0, newHeight)}, TI_MED)
+                if not isCollapsed then
+                    container.Size = UDim2.new(1, 0, 0, newHeight)
+                end
+            end)
+        end
+
+        local comp = {}
+        initComponent(comp, container, section)
+
+        function comp:AddComponent(component)
+            if component and component._frame then
+                component._frame.Parent = content
+                component._section = section
+            end
+        end
+
+        function comp:Clear()
+            for _, child in ipairs(content:GetChildren()) do
+                if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+                    local childComp = CompRegistry[child]
+                    if childComp then
+                        childComp:Remove()
+                    else
+                        child:Destroy()
+                    end
+                end
+            end
+        end
+
+        function comp:SetHeight(newHeight)
+            height = newHeight
+            content.Size = UDim2.new(1, -8, 0, height)
+            if not isCollapsed then
+                container.Size = UDim2.new(1, 0, 0, height + 32)
+            end
+        end
+
+        function comp:GetContent()
+            return content
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:GroupBox] Error creando componente: " .. tostring(result))
+        return makeNilProxy("GroupBox")
+    end
+    return result
+end
+
+function APTX:ProgressBar(sectionName, text, icon, max, default, callback)
+    if type(icon) == "function" then
+        callback = icon
+        icon = nil
+    end
+
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local value = default or 0
+        local maxValue = max or 100
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, 52)
+        layout:Destroy()
+
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, PAD_SM)
+        pad.PaddingRight = UDim.new(0, PAD_SM)
+        pad.PaddingTop = UDim.new(0, 6)
+        pad.PaddingBottom = UDim.new(0, 6)
+        pad.Parent = card
+
+        local topRow = newF({
+            Size = UDim2.new(1, 0, 0, 18),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 1,
+        }, card)
+
+        if icon then
+            local ip = newI(icon, 14, topRow)
+            ip.ImageColor3 = Theme.TextSecondary
+            ip.Position = UDim2.new(0, 0, 0.5, -7)
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -50, 1, 0),
+            Position = UDim2.new(0, icon and 20 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, topRow)
+
+        local valueLabel = newL({
+            Name = "ValueLabel",
+            Size = UDim2.new(0, 40, 1, 0),
+            Position = UDim2.new(1, -40, 0, 0),
+            BackgroundTransparency = 1,
+            Text = string.format("%.0f%%", (value / maxValue) * 100),
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Right,
+        }, topRow)
+
+        local track = newF({
+            Name = "Track",
+            Size = UDim2.new(1, 0, 0, 6),
+            Position = UDim2.new(0, 0, 0, 22),
+            BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+            BorderSizePixel = 0,
+        }, card)
+        newC(track, 3)
+        local trackBorder = newS(track, Theme.Border, 1)
+        trackBorder.Transparency = 0.7
+
+        local fill = newF({
+            Name = "Fill",
+            Size = UDim2.new(value / maxValue, 0, 1, 0),
+            BackgroundColor3 = Theme.BrandMid,
+            BorderSizePixel = 0,
+        }, track)
+        newC(fill, 3)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        function comp:SetValue(v)
+            value = clamp(v, 0, maxValue)
+            local progress = value / maxValue
+            tw(fill, {Size = UDim2.new(progress, 0, 1, 0)}, TI_MED)
+            valueLabel.Text = string.format("%.0f%%", progress * 100)
+            if cb then cb(value) end
+        end
+
+        function comp:GetValue()
+            return value
+        end
+
+        function comp:GetMax()
+            return maxValue
+        end
+
+        function comp:SetMax(newMax)
+            maxValue = newMax
+            comp:SetValue(value)
+        end
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.max then maxValue = params.max end
+            if params.value ~= nil then comp:SetValue(params.value) end
+            if params.color then fill.BackgroundColor3 = params.color end
+            if params.callback then cb = params.callback end
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:ProgressBar] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return makeNilProxy("ProgressBar:" .. tostring(text))
+    end
+    return result
+end
+
+function APTX:Spinner(sectionName, text, icon)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
+
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, card)
+            iconImg.LayoutOrder = 1
+            iconImg.ImageColor3 = Theme.TextSecondary
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, 0, 1, 0),
+            LayoutOrder = 2,
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, card)
+
+        local spinner = newF({
+            Name = "Spinner",
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(1, -30, 0.5, -9),
+            BackgroundColor3 = Theme.BrandMid,
+            BorderSizePixel = 0,
+            ZIndex = 2,
+        }, card)
+        newC(spinner, 9)
+        spinner.BackgroundTransparency = 0.5
+
+        local spinnerStroke = newS(spinner, Theme.BrandMid, 2)
+        spinnerStroke.Transparency = 0.5
+
+        local comp = {}
+        initComponent(comp, card, section)
+
+        local running = true
+        local rotation = 0
+
+        local function animateSpinner()
+            if not running or not spinner or not spinner.Parent then return end
+            rotation = (rotation + 15) % 360
+            spinner.Rotation = rotation
+            task.delay(0.03, animateSpinner)
+        end
+
+        task.delay(0.05, animateSpinner)
+
+        function comp:Stop()
+            running = false
+            spinner.Visible = false
+        end
+
+        function comp:Start()
+            running = true
+            spinner.Visible = true
+            task.delay(0.05, animateSpinner)
+        end
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.color then
+                spinner.BackgroundColor3 = params.color
+                spinnerStroke.Color = params.color
+            end
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Spinner] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return makeNilProxy("Spinner:" .. tostring(text))
+    end
+    return result
+end
+
+function APTX:Checkbox(sectionName, text, icon, default, callback)
+    if type(icon) == "function" then
+        callback = icon
+        icon = nil
+    end
+
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local checked = default == true
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
+
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, card)
+            iconImg.LayoutOrder = 1
+        end
+
+        local checkBox = newF({
+            Name = "Checkbox",
+            Size = UDim2.new(0, 20, 0, 20),
+            LayoutOrder = 2,
+            BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+            BorderSizePixel = 0,
+        }, card)
+        newC(checkBox, 4)
+        local checkStroke = newS(checkBox, Theme.Border, 1)
+
+        local checkMark = newL({
+            Name = "CheckMark",
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = checked and "✓" or "",
+            TextColor3 = Theme.BrandMid,
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+        }, checkBox)
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -24, 1, 0),
+            LayoutOrder = 3,
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, card)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        local function toggleCheck()
+            if comp._disabled then return end
+            checked = not checked
+            checkMark.Text = checked and "✓" or ""
+            checkBox.BackgroundColor3 = checked and Theme.BrandMid or Color3.fromRGB(10, 10, 10)
+            if cb then cb(checked) end
+        end
+
+        local clickConns = connectClick(card, toggleCheck)
+        for _, c in ipairs(clickConns) do table.insert(comp._connections, c) end
+
+        local checkConns = connectClick(checkBox, toggleCheck)
+        for _, c in ipairs(checkConns) do table.insert(comp._connections, c) end
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.value ~= nil then
+                checked = params.value
+                checkMark.Text = checked and "✓" or ""
+                checkBox.BackgroundColor3 = checked and Theme.BrandMid or Color3.fromRGB(10, 10, 10)
+            end
+            if params.callback then cb = params.callback end
+        end
+
+        function comp:GetValue()
+            return checked
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Checkbox] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return makeNilProxy("Checkbox:" .. tostring(text))
+    end
+    return result
+end
+
+function APTX:Keybind(sectionName, text, icon, default, callback)
+    if type(icon) == "function" then
+        callback = icon
+        icon = nil
+    end
+
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local key = default or "None"
+        local listening = false
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
+
+        local iconImg
+        if icon then
+            iconImg = newI(icon, 16, card)
+            iconImg.LayoutOrder = 1
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -80, 1, 0),
+            LayoutOrder = 2,
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, card)
+
+        local bindBtn = newB({
+            Name = "KeybindBtn",
+            Size = UDim2.new(0, 70, 0, 26),
+            Position = UDim2.new(1, -(70 + PAD_SM), 0.5, -13),
+            BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+            Text = key,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = 2,
+        }, card)
+        newC(bindBtn, 6)
+        local bindStroke = newS(bindBtn, Theme.Border, 1)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        local function startListening()
+            if comp._disabled then return end
+            listening = true
+            bindBtn.Text = "..."
+            bindBtn.BackgroundColor3 = Theme.BrandLo
+            bindStroke.Color = Theme.BrandMid
+        end
+
+        local function stopListening(newKey)
+            listening = false
+            if newKey then
+                key = newKey
+                bindBtn.Text = key
+                if cb then cb(key) end
+            else
+                bindBtn.Text = key
+            end
+            bindBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+            bindStroke.Color = Theme.Border
+        end
+
+        bindBtn.MouseButton1Click:Connect(startListening)
+
+        local inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if not listening or gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local keyName = input.KeyCode.Name
+                if keyName ~= "Unknown" then
+                    stopListening(keyName)
+                end
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+                stopListening("Mouse1")
+            elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+                stopListening("Mouse2")
+            elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+                stopListening("Mouse3")
+            end
+        end)
+        table.insert(comp._connections, inputConn)
+
+        local focusLostConn = UserInputService.InputEnded:Connect(function(input)
+            if listening then
+                stopListening()
+            end
+        end)
+        table.insert(comp._connections, focusLostConn)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.key then
+                key = params.key
+                bindBtn.Text = key
+            end
+            if params.callback then cb = params.callback end
+        end
+
+        function comp:GetValue()
+            return key
+        end
+
+        function comp:StartListening()
+            startListening()
+        end
+
+        function comp:StopListening()
+            if listening then stopListening() end
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:Keybind] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return makeNilProxy("Keybind:" .. tostring(text))
+    end
+    return result
+end
+
+function APTX:ColorPicker(sectionName, text, icon, default, callback)
+    if type(icon) == "function" then
+        callback = icon
+        icon = nil
+    end
+
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        local color = default or Color3.fromRGB(192, 192, 192)
+        local isOpen = false
+
+        local card, stroke, layout = makeCard(section.Container)
+        card.Size = UDim2.new(1, 0, 0, CARD_H)
+        layout:Destroy()
+
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, PAD_SM)
+        pad.PaddingRight = UDim.new(0, PAD_SM)
+        pad.Parent = card
+
+        local topRow = newF({
+            Size = UDim2.new(1, 0, 0, CARD_H),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 1,
+        }, card)
+
+        if icon then
+            local ip = newI(icon, 16, topRow)
+            ip.Position = UDim2.new(0, 0, 0.5, -8)
+        end
+
+        local label = newL({
+            Name = "Label",
+            Size = UDim2.new(1, -80, 1, 0),
+            Position = UDim2.new(0, icon and 22 or 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, topRow)
+
+        local colorPreview = newF({
+            Name = "ColorPreview",
+            Size = UDim2.new(0, 30, 0, 22),
+            Position = UDim2.new(1, -40, 0.5, -11),
+            BackgroundColor3 = color,
+            BorderSizePixel = 0,
+            ZIndex = 2,
+        }, topRow)
+        newC(colorPreview, 4)
+        local previewStroke = newS(colorPreview, Theme.Border, 1)
+
+        local comp = {}
+        local cb = callback
+        initComponent(comp, card, section)
+
+        initHover(comp, card, stroke)
+
+        local pickerFrame = newF({
+            Name = "ColorPicker",
+            Size = UDim2.new(0, 180, 0, 200),
+            Position = UDim2.new(1, -190, 0, CARD_H + 4),
+            BackgroundColor3 = Theme.Card,
+            BorderSizePixel = 0,
+            Visible = false,
+            ZIndex = 10,
+            ClipsDescendants = true,
+        }, card)
+        newC(pickerFrame, 8)
+        local pickerStroke = newS(pickerFrame, Theme.Border, 1)
+
+        local hueSlider = newF({
+            Name = "HueSlider",
+            Size = UDim2.new(0, 20, 1, -20),
+            Position = UDim2.new(0, 8, 0, 10),
+            BackgroundColor3 = Color3.fromRGB(255, 0, 0),
+            BorderSizePixel = 0,
+        }, pickerFrame)
+        newC(hueSlider, 4)
+
+        local satValPicker = newF({
+            Name = "SatValPicker",
+            Size = UDim2.new(1, -44, 1, -20),
+            Position = UDim2.new(0, 32, 0, 10),
+            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+            BorderSizePixel = 0,
+        }, pickerFrame)
+        newC(satValPicker, 4)
+
+        local hueGradient = Instance.new("UIGradient")
+        hueGradient.Rotation = 90
+        hueGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.166, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.666, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
+        }
+        hueGradient.Parent = hueSlider
+
+        local svGradient = Instance.new("UIGradient")
+        svGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+        }
+        svGradient.Parent = satValPicker
+
+        local hsv = Color3.toHSV(color)
+        local selectedHue = hsv * 360
+
+        local function updatePicker(force)
+            local h = selectedHue / 360
+            local svGrad = satValPicker:FindFirstChildOfClass("UIGradient")
+            if svGrad then
+                local c = Color3.fromHSV(h, 1, 1)
+                svGrad.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+                    ColorSequenceKeypoint.new(1, c),
+                }
+            end
+        end
+        updatePicker()
+
+        local function updateColorFromPicker()
+            local h = selectedHue / 360
+            local svSize = satValPicker.AbsoluteSize
+            if svSize.X <= 0 or svSize.Y <= 0 then return end
+            local mousePos = UserInputService:GetMouseLocation()
+            local svPos = satValPicker.AbsolutePosition
+            local x = clamp((mousePos.X - svPos.X) / svSize.X, 0, 1)
+            local y = clamp((mousePos.Y - svPos.Y) / svSize.Y, 0, 1)
+            color = Color3.fromHSV(h, x, 1 - y)
+            colorPreview.BackgroundColor3 = color
+            if cb then cb(color) end
+        end
+
+        local function onHueClick(input)
+            if comp._disabled then return end
+            local hPos = clamp((input.Position.Y - hueSlider.AbsolutePosition.Y) / hueSlider.AbsoluteSize.Y, 0, 1)
+            selectedHue = (1 - hPos) * 360
+            updatePicker()
+            updateColorFromPicker()
+        end
+
+        local function onSVClick(input)
+            if comp._disabled then return end
+            updateColorFromPicker()
+        end
+
+        local hueClick = hueSlider.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                onHueClick(input)
+            end
+        end)
+        table.insert(comp._connections, hueClick)
+
+        local hueMove = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                    onHueClick(input)
+                end
+            end
+        end)
+        table.insert(comp._connections, hueMove)
+
+        local svClick = satValPicker.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                onSVClick(input)
+            end
+        end)
+        table.insert(comp._connections, svClick)
+
+        local svMove = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                    onSVClick(input)
+                end
+            end
+        end)
+        table.insert(comp._connections, svMove)
+
+        colorPreview.MouseButton1Click:Connect(function()
+            if comp._disabled then return end
+            isOpen = not isOpen
+            pickerFrame.Visible = isOpen
+            if isOpen then
+                updatePicker()
+                updateColorFromPicker()
+                pickerFrame.Position = UDim2.new(1, -190, 0, CARD_H + 4)
+            end
+        end)
+
+        function comp:Edit(params)
+            params = params or {}
+            if params.text then label.Text = params.text end
+            if params.color then
+                color = params.color
+                colorPreview.BackgroundColor3 = color
+                local h, s, v = Color3.toHSV(color)
+                selectedHue = h * 360
+                updatePicker()
+                if cb then cb(color) end
+            end
+            if params.callback then cb = params.callback end
+        end
+
+        function comp:GetValue()
+            return color
+        end
+
+        function comp:SetColor(newColor)
+            color = newColor
+            colorPreview.BackgroundColor3 = color
+            local h, s, v = Color3.toHSV(color)
+            selectedHue = h * 360
+            updatePicker()
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:ColorPicker] Error creando componente '" .. tostring(text) .. "': " .. tostring(result))
+        return makeNilProxy("ColorPicker:" .. tostring(text))
+    end
+    return result
+end
+
+function APTX:TabContainer(sectionName, title, tabs, default)
+    local ok, result = pcall(function()
+        local section = APTX:GetSection(sectionName)
+        if not section then
+            error("Section not found: " .. tostring(sectionName))
+        end
+
+        if not tabs or #tabs == 0 then
+            tabs = {{name = "Tab 1", content = {}}}
+        end
+
+        local container = newF({
+            Name = "TabContainer_" .. title,
+            Size = UDim2.new(1, 0, 0, 200),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+        }, section.Container)
+
+        local tabBar = newF({
+            Name = "TabBar",
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundColor3 = Color3.fromRGB(5, 5, 5),
+            BorderSizePixel = 0,
+        }, container)
+        newC(tabBar, 6)
+
+        local tabLayout = Instance.new("UIListLayout")
+        tabLayout.FillDirection = Enum.FillDirection.Horizontal
+        tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        tabLayout.Padding = UDim.new(0, 4)
+        tabLayout.Parent = tabBar
+
+        local tabPad = Instance.new("UIPadding")
+        tabPad.PaddingLeft = UDim.new(0, 8)
+        tabPad.PaddingRight = UDim.new(0, 8)
+        tabPad.Parent = tabBar
+
+        local contentArea = newF({
+            Name = "ContentArea",
+            Size = UDim2.new(1, 0, 1, -36),
+            Position = UDim2.new(0, 0, 0, 36),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+        }, container)
+
+        local comp = {}
+        initComponent(comp, container, section)
+
+        local tabButtons = {}
+        local tabContents = {}
+        local selectedTab = default or 1
+
+        for i, tabData in ipairs(tabs) do
+            local tabBtn = newB({
+                Name = "TabBtn_" .. tabData.name,
+                Size = UDim2.new(0, 80, 0, 28),
+                BackgroundColor3 = Color3.fromRGB(10, 10, 10),
+                Text = tabData.name,
+                TextColor3 = i == selectedTab and Theme.BrandMid or Theme.TextSecondary,
+                TextSize = 12,
+                Font = Enum.Font.GothamMedium,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+            }, tabBar)
+            newC(tabBtn, 4)
+            local tabStroke = newS(tabBtn, Theme.Border, 1)
+            tabStroke.Transparency = i == selectedTab and 0.3 or 0.8
+
+            local tabContent = newF({
+                Name = "TabContent_" .. tabData.name,
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                Visible = i == selectedTab,
+                ClipsDescendants = true,
+            }, contentArea)
+
+            local contentLayout = Instance.new("UIListLayout")
+            contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            contentLayout.Padding = UDim.new(0, 4)
+            contentLayout.Parent = tabContent
+
+            local contentPad = Instance.new("UIPadding")
+            contentPad.PaddingLeft = UDim.new(0, 4)
+            contentPad.PaddingRight = UDim.new(0, 4)
+            contentPad.PaddingTop = UDim.new(0, 4)
+            contentPad.PaddingBottom = UDim.new(0, 4)
+            contentPad.Parent = tabContent
+
+            tabButtons[i] = tabBtn
+            tabContents[i] = tabContent
+
+            tabBtn.MouseButton1Click:Connect(function()
+                if comp._disabled then return end
+                for j, btn in ipairs(tabButtons) do
+                    local stroke = btn:FindFirstChildOfClass("UIStroke")
+                    local txtColor = j == i and Theme.BrandMid or Theme.TextSecondary
+                    btn.TextColor3 = txtColor
+                    if stroke then stroke.Transparency = j == i and 0.3 or 0.8 end
+                    tabContents[j].Visible = j == i
+                end
+                selectedTab = i
+            end)
+
+            tabBtn.MouseEnter:Connect(function()
+                if i ~= selectedTab then
+                    tw(tabBtn, {BackgroundColor3 = Theme.CardHover}, TI_HOVER)
+                end
+            end)
+
+            tabBtn.MouseLeave:Connect(function()
+                if i ~= selectedTab then
+                    tw(tabBtn, {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}, TI_HOVER)
+                end
+            end)
+
+            for _, child in ipairs(tabData.content or {}) do
+                if child and child._frame then
+                    child._frame.Parent = tabContent
+                    child._section = section
+                end
+            end
+        end
+
+        function comp:SelectTab(index)
+            if index < 1 or index > #tabButtons then return end
+            for i, btn in ipairs(tabButtons) do
+                local stroke = btn:FindFirstChildOfClass("UIStroke")
+                local txtColor = i == index and Theme.BrandMid or Theme.TextSecondary
+                btn.TextColor3 = txtColor
+                if stroke then stroke.Transparency = i == index and 0.3 or 0.8 end
+                tabContents[i].Visible = i == index
+            end
+            selectedTab = index
+        end
+
+        function comp:GetSelectedTab()
+            return selectedTab
+        end
+
+        function comp:GetTabContent(index)
+            return tabContents[index]
+        end
+
+        return comp
+    end)
+    if not ok then
+        warn("[APTX:TabContainer] Error creando componente '" .. tostring(title) .. "': " .. tostring(result))
+        return makeNilProxy("TabContainer:" .. tostring(title))
+    end
+    return result
+end
 
 local NOTIF_Z_BASE = 1000
-
-APTX._notifStack = {}
 local NOTIF_GAP = 6
 local NOTIF_RIGHT_MARGIN = 2
 local notifCounter = 0
 
 local function repositionStack()
-    -- First clean up dead entries from the stack
     for i = #APTX._notifStack, 1, -1 do
         if not APTX._notifStack[i] or not APTX._notifStack[i]._alive then
             table.remove(APTX._notifStack, i)
@@ -2302,7 +3278,6 @@ local function repositionStack()
     end
     local maxVisible = math.min(#visible, 4)
 
-    -- Close the OLDEST notifications first (lower indices = older)
     for idx = 1, #visible do
         local entry = visible[idx]
         if idx > maxVisible then
@@ -2332,8 +3307,6 @@ end
 
 function APTX:Notify(params)
     local ok, result = pcall(function()
-        -- FIX #9: Run all assertions BEFORE any side effects so notifCounter
-        -- doesn't increment on a failed call
         assert(type(params) == "table", "[APTX:Notify] params debe ser una tabla")
         assert(params.title, "[APTX:Notify] params.title es requerido")
         assert(params.content, "[APTX:Notify] params.content es requerido")
@@ -2373,9 +3346,6 @@ function APTX:Notify(params)
             warning = Theme.Warning,
         }
 
-        -- FIX #11: Create notifications in a separate ScreenGui that is NOT under UIScale.
-        -- If Card lived under APTX.GUI, the UIScale would scale pixel offsets making
-        -- notifications fly off-screen on mobile. A dedicated gui bypasses this entirely.
         local notifGui = Instance.new("ScreenGui")
         notifGui.Name = "APTXNotifGui"
         notifGui.ResetOnSpawn = false
@@ -2580,7 +3550,6 @@ function APTX:Notify(params)
                 end
                 removeFromStack(Notif)
             end
-            -- FIX #11c: Clean up the dedicated notif ScreenGui when its card is gone
             if notifGui and notifGui.Parent then
                 notifGui:Destroy()
             end
@@ -2593,7 +3562,6 @@ function APTX:Notify(params)
             Notif._alive = false
 
             if Notif._autoCloseThread then
-                -- FIX: task.cancel throws if the thread already finished; pcall prevents the crash
                 pcall(task.cancel, Notif._autoCloseThread)
                 Notif._autoCloseThread = nil
             end
@@ -2752,7 +3720,919 @@ function APTX:Notify(params)
     return result
 end
 
---- Utility: format arguments for logging
+function APTX:Snackbar(text, duration)
+    local ok, result = pcall(function()
+        if not APTX.GUI then
+            error("APTX:Config must be called before Snackbar")
+        end
+
+        duration = duration or 3
+
+        local snack = newF({
+            Name = "Snackbar",
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 1, -16),
+            BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+            BorderSizePixel = 0,
+            ZIndex = 500,
+            ClipsDescendants = true,
+        }, APTX.GUI)
+        newC(snack, 8)
+        local snackStroke = newS(snack, Theme.Border, 1)
+        snackStroke.Transparency = 0.7
+
+        local label = newL({
+            Size = UDim2.new(1, -24, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = text,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, snack)
+
+        local function updateSize()
+            local textW = label.TextBounds.X + 32
+            local textH = math.max(24, label.TextBounds.Y + 16)
+            snack.Size = UDim2.new(0, math.min(textW, 400), 0, textH)
+            snack.Position = UDim2.new(0.5, -snack.Size.X.Offset / 2, 1, -16)
+        end
+
+        label:GetPropertyChangedSignal("Text"):Connect(updateSize)
+        task.defer(updateSize)
+
+        snack.BackgroundTransparency = 1
+        snack.Size = UDim2.new(0, 0, 0, 0)
+        snack.Position = UDim2.new(0.5, 0, 1, 16)
+
+        task.delay(0.05, function()
+            tw(snack, {BackgroundTransparency = 0}, TI_BOUNCE)
+            tw(snack, {Size = UDim2.new(0, snack.Size.X.Offset, 0, snack.Size.Y.Offset)}, TI_BOUNCE)
+            tw(snack, {Position = UDim2.new(0.5, -snack.Size.X.Offset / 2, 1, -16)}, TI_BOUNCE)
+        end)
+
+        task.delay(duration, function()
+            if not snack or not snack.Parent then return end
+            tw(snack, {Position = UDim2.new(0.5, -snack.Size.X.Offset / 2, 1, 16)}, TI_MED)
+            tw(snack, {BackgroundTransparency = 1}, TI_MED)
+            task.delay(0.25, function()
+                if snack and snack.Parent then snack:Destroy() end
+            end)
+        end)
+
+        local function dismiss()
+            if snack and snack.Parent then
+                tw(snack, {Position = UDim2.new(0.5, -snack.Size.X.Offset / 2, 1, 16)}, TI_FAST)
+                tw(snack, {BackgroundTransparency = 1}, TI_FAST)
+                task.delay(0.15, function()
+                    if snack and snack.Parent then snack:Destroy() end
+                end)
+            end
+        end
+
+        return {
+            Destroy = dismiss,
+            SetText = function(newText)
+                if snack and snack.Parent then
+                    label.Text = newText
+                end
+            end,
+        }
+    end)
+    if not ok then
+        warn("[APTX:Snackbar] Error: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+function APTX:Dialog(params)
+    local ok, result = pcall(function()
+        assert(type(params) == "table", "[APTX:Dialog] params debe ser una tabla")
+        assert(params.title, "[APTX:Dialog] params.title es requerido")
+        assert(params.content, "[APTX:Dialog] params.content es requerido")
+        assert(APTX.GUI, "[APTX:Dialog] Llama APTX:Config() antes de usar Dialog")
+
+        local dialogGui = Instance.new("ScreenGui")
+        dialogGui.Name = "APTXDialogGui"
+        dialogGui.ResetOnSpawn = false
+        dialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        dialogGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+        local overlay = newF({
+            Name = "DialogOverlay",
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.6,
+            BorderSizePixel = 0,
+            ZIndex = 2000,
+        }, dialogGui)
+
+        local card = newF({
+            Name = "DialogCard",
+            Size = UDim2.new(0, 400, 0, 0),
+            Position = UDim2.new(0.5, -200, 0.5, -100),
+            BackgroundColor3 = Theme.Surface,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = 2001,
+        }, overlay)
+        newC(card, 12)
+        newS(card, Theme.Border, 1)
+
+        local header = newF({
+            Name = "Header",
+            Size = UDim2.new(1, 0, 0, 44),
+            BackgroundColor3 = Color3.fromRGB(5, 5, 5),
+            BorderSizePixel = 0,
+        }, card)
+        local headerStroke = newS(header, Theme.Border, 1)
+        headerStroke.Transparency = 0.5
+
+        local titleLabel = newL({
+            Name = "Title",
+            Size = UDim2.new(1, -50, 1, 0),
+            Position = UDim2.new(0, 12, 0, 0),
+            BackgroundTransparency = 1,
+            Text = params.title,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, header)
+
+        local closeBtn = newB({
+            Name = "CloseBtn",
+            Size = UDim2.new(0, 32, 0, 32),
+            Position = UDim2.new(1, -36, 0.5, -16),
+            BackgroundTransparency = 1,
+            Text = "✕",
+            TextColor3 = Theme.TextSecondary,
+            TextSize = 14,
+            Font = Enum.Font.Gotham,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+        }, header)
+        closeBtn.MouseEnter:Connect(function()
+            tw(closeBtn, {TextColor3 = Theme.Error}, TI_HOVER)
+        end)
+        closeBtn.MouseLeave:Connect(function()
+            tw(closeBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER)
+        end)
+
+        local content = newF({
+            Name = "Content",
+            Size = UDim2.new(1, -24, 0, 0),
+            Position = UDim2.new(0, 12, 0, 48),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, card)
+
+        local contentLabel = newL({
+            Name = "ContentLabel",
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1,
+            Text = params.content,
+            TextColor3 = Theme.TextSecondary,
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            TextWrapped = true,
+        }, content)
+
+        local buttonContainer = newF({
+            Name = "ButtonContainer",
+            Size = UDim2.new(1, 0, 0, 0),
+            Position = UDim2.new(0, 0, 1, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        }, card)
+
+        local btnLayout = Instance.new("UIListLayout")
+        btnLayout.FillDirection = Enum.FillDirection.Horizontal
+        btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        btnLayout.Padding = UDim.new(0, 8)
+        btnLayout.Parent = buttonContainer
+
+        local btnPad = Instance.new("UIPadding")
+        btnPad.PaddingRight = UDim.new(0, 12)
+        btnPad.PaddingBottom = UDim.new(0, 8)
+        btnPad.Parent = buttonContainer
+
+        local buttons = params.buttons or {
+            {text = "Aceptar", callback = function() end}
+        }
+
+        local buttonObjects = {}
+
+        for _, btnData in ipairs(buttons) do
+            local btn = newB({
+                Size = UDim2.new(0, 80, 0, 32),
+                BackgroundColor3 = btnData.color or Theme.BrandLo,
+                Text = btnData.text,
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+                Font = Enum.Font.GothamBold,
+                TextSize = 12,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+                ZIndex = 2002,
+            }, buttonContainer)
+            newC(btn, 6)
+            local btnStroke = newS(btn, Color3.fromRGB(255, 255, 255), 1)
+            btnStroke.Transparency = 0.6
+
+            btn.MouseEnter:Connect(function()
+                tw(btn, {BackgroundColor3 = btnData.color:Lerp(Color3.new(1, 1, 1), 0.2)}, TI_HOVER)
+            end)
+            btn.MouseLeave:Connect(function()
+                tw(btn, {BackgroundColor3 = btnData.color or Theme.BrandLo}, TI_HOVER)
+            end)
+
+            btn.MouseButton1Click:Connect(function()
+                if btnData.callback then
+                    btnData.callback()
+                end
+                if btnData.close ~= false then
+                    dialogGui:Destroy()
+                end
+            end)
+
+            table.insert(buttonObjects, btn)
+        end
+
+        closeBtn.MouseButton1Click:Connect(function()
+            dialogGui:Destroy()
+        end)
+
+        local function updateSize()
+            local textBounds = contentLabel.TextBounds
+            local textH = math.max(20, textBounds.Y + 8)
+            contentLabel.Size = UDim2.new(1, 0, 0, textH)
+            content.Size = UDim2.new(1, -24, 0, textH)
+
+            local btnH = 40
+            buttonContainer.Size = UDim2.new(1, 0, 0, btnH)
+
+            local totalH = 44 + textH + btnH + 16
+            card.Size = UDim2.new(0, 400, 0, totalH)
+            card.Position = UDim2.new(0.5, -200, 0.5, -totalH / 2)
+
+            card.BackgroundTransparency = 1
+            tw(card, {BackgroundTransparency = 0}, TI_BOUNCE)
+
+            for _, child in ipairs(card:GetChildren()) do
+                if child:IsA("UIStroke") then
+                    child.Transparency = 1
+                    tw(child, {Transparency = 0}, TI_BOUNCE)
+                end
+            end
+        end
+
+        task.defer(updateSize)
+
+        local dialog = {
+            _gui = dialogGui,
+            _card = card,
+            _buttons = buttonObjects,
+            _title = titleLabel,
+            _content = contentLabel,
+
+            Destroy = function()
+                if dialogGui and dialogGui.Parent then
+                    dialogGui:Destroy()
+                end
+            end,
+
+            SetTitle = function(self, newTitle)
+                titleLabel.Text = newTitle
+            end,
+
+            SetContent = function(self, newContent)
+                contentLabel.Text = newContent
+                updateSize()
+            end,
+
+            AddButton = function(self, text, callback, color)
+                local btn = newB({
+                    Size = UDim2.new(0, 80, 0, 32),
+                    BackgroundColor3 = color or Theme.BrandLo,
+                    Text = text,
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 12,
+                    BorderSizePixel = 0,
+                    AutoButtonColor = false,
+                    ZIndex = 2002,
+                }, buttonContainer)
+                newC(btn, 6)
+                local btnStroke = newS(btn, Color3.fromRGB(255, 255, 255), 1)
+                btnStroke.Transparency = 0.6
+
+                btn.MouseEnter:Connect(function()
+                    tw(btn, {BackgroundColor3 = color:Lerp(Color3.new(1, 1, 1), 0.2)}, TI_HOVER)
+                end)
+                btn.MouseLeave:Connect(function()
+                    tw(btn, {BackgroundColor3 = color or Theme.BrandLo}, TI_HOVER)
+                end)
+
+                btn.MouseButton1Click:Connect(function()
+                    if callback then callback() end
+                end)
+
+                table.insert(self._buttons, btn)
+                updateSize()
+                return btn
+            end,
+
+            RemoveButton = function(self, index)
+                if self._buttons[index] then
+                    self._buttons[index]:Destroy()
+                    table.remove(self._buttons, index)
+                    updateSize()
+                end
+            end,
+        }
+
+        table.insert(APTX._dialogStack, dialog)
+
+        return dialog
+    end)
+    if not ok then
+        warn("[APTX:Dialog] Error: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+function APTX:Prompt(params)
+    local ok, result = pcall(function()
+        assert(type(params) == "table", "[APTX:Prompt] params debe ser una tabla")
+        assert(params.title, "[APTX:Prompt] params.title es requerido")
+        assert(params.content, "[APTX:Prompt] params.content es requerido")
+        assert(APTX.GUI, "[APTX:Prompt] Llama APTX:Config() antes de usar Prompt")
+
+        local dialog = APTX:Dialog({
+            title = params.title,
+            content = params.content,
+            buttons = {
+                {text = "Cancelar", callback = function() end},
+                {text = "Aceptar", callback = function() end},
+            }
+        })
+
+        if not dialog then return nil end
+
+        local content = dialog._card:FindFirstChild("Content")
+        if content then
+            local inputBox = Instance.new("TextBox")
+            inputBox.Name = "PromptInput"
+            inputBox.Size = UDim2.new(1, 0, 0, 30)
+            inputBox.Position = UDim2.new(0, 0, 1, 4)
+            inputBox.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+            inputBox.BorderSizePixel = 0
+            inputBox.PlaceholderText = params.placeholder or ""
+            inputBox.PlaceholderColor3 = Theme.TextDisabled
+            inputBox.Text = params.default or ""
+            inputBox.TextColor3 = Theme.TextPrimary
+            inputBox.Font = Enum.Font.Gotham
+            inputBox.TextSize = 13
+            inputBox.TextXAlignment = Enum.TextXAlignment.Left
+            inputBox.ClearTextOnFocus = false
+            inputBox.Parent = content
+            newC(inputBox, 6)
+            newS(inputBox, Theme.Border, 1)
+
+            local inputPad = Instance.new("UIPadding")
+            inputPad.PaddingLeft = UDim.new(0, 8)
+            inputPad.Parent = inputBox
+
+            local contentLabel = content:FindFirstChild("ContentLabel")
+            if contentLabel then
+                contentLabel.Size = UDim2.new(1, 0, 0, contentLabel.Size.Y.Offset)
+            end
+
+            local function updatePromptSize()
+                local textBounds = contentLabel.TextBounds
+                local textH = math.max(20, textBounds.Y + 8)
+                contentLabel.Size = UDim2.new(1, 0, 0, textH)
+                inputBox.Position = UDim2.new(0, 0, 1, 6)
+                content.Size = UDim2.new(1, -24, 0, textH + 36)
+
+                local btnH = 40
+                local buttonContainer = dialog._card:FindFirstChild("ButtonContainer")
+                if buttonContainer then
+                    buttonContainer.Size = UDim2.new(1, 0, 0, btnH)
+                end
+
+                local totalH = 44 + textH + 36 + btnH + 16
+                dialog._card.Size = UDim2.new(0, 400, 0, totalH)
+                dialog._card.Position = UDim2.new(0.5, -200, 0.5, -totalH / 2)
+            end
+
+            task.defer(updatePromptSize)
+
+            local buttons = dialog._buttons
+            for _, btn in ipairs(buttons) do
+                local oldClick = btn.MouseButton1Click
+                btn.MouseButton1Click:Connect(function()
+                    if btn.Text == "Aceptar" then
+                        if params.callback then
+                            params.callback(inputBox.Text)
+                        end
+                        dialog:Destroy()
+                    end
+                end)
+            end
+
+            inputBox.Focused:Connect(function()
+                task.delay(0.05, function()
+                    inputBox.Text = inputBox.Text
+                end)
+            end)
+
+            return {
+                GetValue = function()
+                    return inputBox.Text
+                end,
+                SetValue = function(text)
+                    inputBox.Text = text or ""
+                end,
+                Destroy = function()
+                    dialog:Destroy()
+                end,
+            }
+        end
+
+        return nil
+    end)
+    if not ok then
+        warn("[APTX:Prompt] Error: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+function APTX:BindKey(key, callback, description)
+    if not key or not callback then return end
+    APTX._keybindings[key] = {
+        callback = callback,
+        description = description or "",
+    }
+end
+
+function APTX:UnbindKey(key)
+    APTX._keybindings[key] = nil
+end
+
+function APTX:ClearKeybinds()
+    APTX._keybindings = {}
+end
+
+function APTX:InitKeybindSystem()
+    local inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            local keyName = input.KeyCode.Name
+            local binding = APTX._keybindings[keyName]
+            if binding and binding.callback then
+                binding.callback()
+            end
+        end
+    end)
+    table.insert(APTX._connections, inputConn)
+end
+
+function APTX:IsKeyDown(key)
+    return UserInputService:IsKeyDown(Enum.KeyCode[key])
+end
+
+function APTX:GetKeybindings()
+    local result = {}
+    for key, binding in pairs(APTX._keybindings) do
+        result[key] = binding.description
+    end
+    return result
+end
+
+APTX._floatingFrames = {}
+local FF_Z_BASE = 600
+
+function APTX:FloatingFrame(title, width, height, opts)
+    local ok, result = pcall(function()
+        opts = opts or {}
+        local player = Players.LocalPlayer
+        if not player then
+            Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+            player = Players.LocalPlayer
+        end
+        local playerGui = player:WaitForChild("PlayerGui")
+
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "FFrame_" .. tostring(#APTX._floatingFrames + 1)
+        gui.ResetOnSpawn = false
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        gui.Parent = playerGui
+
+        local w = width or 420
+        local h = height or 300
+        local headerH = 32
+        local x = opts.x or (80 + (#APTX._floatingFrames * 30))
+        local y = opts.y or (80 + (#APTX._floatingFrames * 30))
+
+        local frame = newF({
+            Name = "FloatingFrame",
+            Size = UDim2.new(0, w, 0, h),
+            Position = UDim2.new(0, x, 0, y),
+            BackgroundColor3 = Theme.FloatingBg,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = FF_Z_BASE + 1,
+        }, gui)
+        newC(frame, 10)
+        local frameStroke = newS(frame, Theme.FloatingBorder, 1)
+
+        local shadow = newF({
+            Size = UDim2.new(1, 12, 1, 12),
+            Position = UDim2.new(0.5, -6, 0.5, -6),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 0.88,
+            BorderSizePixel = 0,
+            ZIndex = FF_Z_BASE,
+        }, gui)
+        newC(shadow, 12)
+        local posSync = frame:GetPropertyChangedSignal("Position"):Connect(function()
+            if shadow and shadow.Parent then
+                shadow.Position = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset - 6, frame.Position.Y.Scale, frame.Position.Y.Offset - 6)
+            end
+        end)
+        local sizeSync = frame:GetPropertyChangedSignal("Size"):Connect(function()
+            if shadow and shadow.Parent then
+                shadow.Size = UDim2.new(1, frame.Size.X.Offset + 12, 1, frame.Size.Y.Offset + 12)
+            end
+        end)
+        shadow.Size = UDim2.new(1, w + 12, 1, h + 12)
+        shadow.Position = UDim2.new(0, x - 6, 0, y - 6)
+
+        local header = newF({
+            Name = "FFHeader",
+            Size = UDim2.new(1, 0, 0, headerH),
+            BackgroundColor3 = Color3.fromRGB(8, 8, 8),
+            BorderSizePixel = 0,
+            ZIndex = FF_Z_BASE + 2,
+        }, frame)
+        local headerHL = Instance.new("UIStroke")
+        headerHL.Color = Theme.BrandLo
+        headerHL.Thickness = 1
+        headerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        headerHL.Transparency = 0.85
+        headerHL.Parent = header
+
+        local titleLbl = newL({
+            Name = "FFTitle",
+            Size = UDim2.new(1, -80, 1, 0),
+            Position = UDim2.new(0, 10, 0, 0),
+            BackgroundTransparency = 1,
+            Text = title,
+            TextColor3 = Theme.TextPrimary,
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = FF_Z_BASE + 3,
+        }, header)
+
+        local btnFrame = newF({
+            Size = UDim2.new(0, 72, 1, 0),
+            Position = UDim2.new(1, -76, 0, 0),
+            BackgroundTransparency = 1,
+            ZIndex = FF_Z_BASE + 3,
+        }, header)
+        local btnLayout = Instance.new("UIListLayout")
+        btnLayout.FillDirection = Enum.FillDirection.Horizontal
+        btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        btnLayout.Padding = UDim.new(0, 4)
+        btnLayout.Parent = btnFrame
+
+        local pinBtn = newB({
+            Size = UDim2.new(0, 22, 0, 22),
+            BackgroundTransparency = 1,
+            Text = "\u{1F4CC}",
+            TextColor3 = Theme.TextSecondary,
+            TextSize = 12,
+            Font = Enum.Font.Gotham,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = FF_Z_BASE + 4,
+        }, btnFrame)
+        local pinned = false
+        pinBtn.MouseButton1Click:Connect(function()
+            pinned = not pinned
+            pinBtn.TextColor3 = pinned and Theme.BrandMid or Theme.TextSecondary
+        end)
+
+        local closeBtn = newB({
+            Size = UDim2.new(0, 22, 0, 22),
+            BackgroundTransparency = 1,
+            Text = "\u{2715}",
+            TextColor3 = Theme.TextSecondary,
+            TextSize = 14,
+            Font = Enum.Font.Gotham,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = FF_Z_BASE + 4,
+        }, btnFrame)
+        closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Theme.Error}, TI_HOVER) end)
+        closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER) end)
+
+        local content = newF({
+            Name = "FFContent",
+            Size = UDim2.new(1, -4, 1, -(headerH + 4)),
+            Position = UDim2.new(0, 2, 0, headerH + 2),
+            BackgroundTransparency = 1,
+            ZIndex = FF_Z_BASE + 2,
+        }, frame)
+
+        local logList = Instance.new("ScrollingFrame")
+        logList.Name = "FFLogList"
+        logList.Size = UDim2.new(1, -4, 1, -30)
+        logList.Position = UDim2.new(0, 2, 0, 0)
+        logList.BackgroundTransparency = 1
+        logList.BorderSizePixel = 0
+        logList.ScrollBarThickness = 2
+        logList.ScrollBarImageColor3 = Theme.Border
+        logList.ScrollBarImageTransparency = 0.6
+        logList.ElasticBehavior = Enum.ElasticBehavior.Always
+        logList.CanvasSize = UDim2.new(0, 0, 0, 0)
+        logList.Parent = content
+
+        local logLayout = Instance.new("UIListLayout")
+        logLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        logLayout.Padding = UDim.new(0, 1)
+        logLayout.Parent = logList
+        local logLayoutConn = logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            logList.CanvasSize = UDim2.new(0, 0, 0, logLayout.AbsoluteContentSize.Y + 2)
+        end)
+
+        local bottomBar = newF({
+            Size = UDim2.new(1, -4, 0, 26),
+            Position = UDim2.new(0, 2, 1, -28),
+            BackgroundTransparency = 1,
+            ZIndex = FF_Z_BASE + 3,
+        }, content)
+
+        local statusLabel = newL({
+            Size = UDim2.new(0, 100, 1, 0),
+            Position = UDim2.new(0, 4, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            TextColor3 = Theme.TextDisabled,
+            Font = Enum.Font.Gotham,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = FF_Z_BASE + 4,
+        }, bottomBar)
+
+        local autoScroll = true
+        local autoScrollBtn = newB({
+            Size = UDim2.new(0, 50, 1, 0),
+            Position = UDim2.new(1, -104, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "AUTO⏺",
+            TextColor3 = Theme.BrandMid,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = FF_Z_BASE + 4,
+        }, bottomBar)
+        autoScrollBtn.MouseButton1Click:Connect(function()
+            autoScroll = not autoScroll
+            autoScrollBtn.TextColor3 = autoScroll and Theme.BrandMid or Theme.TextDisabled
+        end)
+
+        local clearBtn = newB({
+            Size = UDim2.new(0, 50, 1, 0),
+            Position = UDim2.new(1, -52, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "CLEAR",
+            TextColor3 = Theme.TextSecondary,
+            TextSize = 9,
+            Font = Enum.Font.GothamBold,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            ZIndex = FF_Z_BASE + 4,
+        }, bottomBar)
+        clearBtn.MouseButton1Click:Connect(function()
+            for _, child in ipairs(logList:GetChildren()) do
+                if child:IsA("TextLabel") or (child:IsA("Frame") and not child:IsA("UIListLayout")) then
+                    child:Destroy()
+                end
+            end
+            logLayout.AbsoluteContentSize = UDim2.new(0, 0, 0, 0)
+        end)
+
+        local dragConns = makeDraggable(header, frame)
+        for _, conn in ipairs(dragConns) do table.insert(APTX._connections, conn) end
+
+        local zCounter = FF_Z_BASE + 5
+        local function bringToFront()
+            zCounter = zCounter + 1
+            frame.ZIndex = zCounter
+            shadow.ZIndex = zCounter - 1
+            for _, child in ipairs(frame:GetDescendants()) do
+                if child:IsA("GuiObject") then
+                    child.ZIndex = child.ZIndex + 2
+                end
+            end
+        end
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                bringToFront()
+            end
+        end)
+
+        local _alive = true
+        closeBtn.MouseButton1Click:Connect(function()
+            if _alive then
+                _alive = false
+                tw(frame, {Size = UDim2.new(0, w, 0, 0), BackgroundTransparency = 1}, TI_MED)
+                tw(shadow, {BackgroundTransparency = 1}, TI_MED)
+                task.delay(0.25, function()
+                    if gui and gui.Parent then gui:Destroy() end
+                end)
+            end
+        end)
+
+        local floatingFrame = {
+            _frame = frame, _gui = gui,
+            _logList = logList, _logLayout = logLayout,
+            _statusLabel = statusLabel, _autoScroll = autoScroll,
+            _alive = _alive, _pinned = pinned, _visible = true,
+
+            AddLog = function(self, text, color, icon)
+                if not self._alive then return end
+                local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
+                if icon then
+                    newL({Size = UDim2.new(0, 16, 1, 0), Position = UDim2.new(0, 2, 0, 0), BackgroundTransparency = 1, Text = icon, TextColor3 = color or Theme.TextSecondary, TextSize = 10, Font = Enum.Font.Gotham, ZIndex = FF_Z_BASE + 4}, line)
+                end
+                newL({Size = UDim2.new(1, icon and -22 or -6, 1, 0), Position = UDim2.new(0, icon and 20 or 4, 0, 0), BackgroundTransparency = 1, Text = text, TextColor3 = color or Theme.LogDefault, TextSize = 11, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
+                if autoScroll then
+                    task.delay(0.02, function()
+                        if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
+                    end)
+                end
+                return line
+            end,
+
+            AddRichLog = function(self, parts)
+                if not self._alive then return end
+                local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
+                local xOff = 4
+                for _, part in ipairs(parts) do
+                    local seg = newL({Size = UDim2.new(0, part.width or 0, 1, 0), Position = UDim2.new(0, xOff, 0, 0), BackgroundTransparency = 1, Text = part.text or "", TextColor3 = part.color or Theme.LogDefault, TextSize = part.size or 11, Font = part.bold and Enum.Font.GothamBold or Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
+                    local w = seg.TextBounds.X + 4
+                    seg.Size = UDim2.new(0, w, 1, 0)
+                    xOff = xOff + w
+                end
+                if autoScroll then
+                    task.delay(0.02, function()
+                        if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
+                    end)
+                end
+                return line
+            end,
+
+            SetStatus = function(self, text, color)
+                if not self._alive then return end
+                statusLabel.Text = text or ""
+                statusLabel.TextColor3 = color or Theme.TextDisabled
+            end,
+
+            Clear = function(self)
+                if not self._alive then return end
+                for _, child in ipairs(logList:GetChildren()) do
+                    if child:IsA("TextLabel") or (child:IsA("Frame") and child.Name ~= "_noop") then pcall(child.Destroy, child) end
+                end
+            end,
+
+            Show = function(self) if not self._alive then return end; frame.Visible = true; shadow.Visible = true; self._visible = true end,
+            Hide = function(self) if not self._alive then return end; frame.Visible = false; shadow.Visible = false; self._visible = false end,
+            Toggle = function(self) if self._visible then self:Hide() else self:Show() end end,
+            SetTitle = function(self, t) if not self._alive then return end; titleLbl.Text = t or title end,
+            Destroy = function(self) self._alive = false; if gui and gui.Parent then gui:Destroy() end end,
+            BringToFront = bringToFront,
+            IsPinned = function(self) return pinned end,
+
+            GetContent = function(self)
+                return content
+            end,
+
+            AddComponent = function(self, component)
+                if not self._alive then return end
+                if component and component._frame then
+                    component._frame.Parent = content
+                end
+            end,
+
+            AddContainer = function(self, container)
+                if not self._alive then return end
+                if container and container._frame then
+                    container._frame.Parent = content
+                end
+            end,
+        }
+
+        local ffContent = content
+
+        function floatingFrame:CreateSection(name, icon)
+            local section = APTX:Section(name, icon, true)
+            if section then
+                section._frame.Parent = ffContent
+                return section
+            end
+            return nil
+        end
+
+        function floatingFrame:CreateButton(text, icon, callback)
+            return APTX:Button("Section", text, icon, callback)
+        end
+
+        function floatingFrame:CreateToggle(text, icon, default, callback)
+            return APTX:Toggle("Section", text, icon, default, callback)
+        end
+
+        function floatingFrame:CreateSlider(text, icon, min, max, default, callback)
+            return APTX:Slider("Section", text, icon, min, max, default, callback)
+        end
+
+        function floatingFrame:CreateMenu(text, placeholder, icon, options, default, callback)
+            return APTX:Menu("Section", text, placeholder, icon, options, default, callback)
+        end
+
+        function floatingFrame:CreateInput(text, icon, placeholder, callback)
+            return APTX:Input("Section", text, icon, placeholder, callback)
+        end
+
+        function floatingFrame:CreateLabel(text)
+            return APTX:Label("Section", text)
+        end
+
+        function floatingFrame:CreateSeparator(text)
+            return APTX:Separator("Section", text)
+        end
+
+        function floatingFrame:CreateGroupBox(title, params)
+            return APTX:GroupBox("Section", title, params)
+        end
+
+        function floatingFrame:CreateProgressBar(text, icon, max, default, callback)
+            return APTX:ProgressBar("Section", text, icon, max, default, callback)
+        end
+
+        function floatingFrame:CreateSpinner(text, icon)
+            return APTX:Spinner("Section", text, icon)
+        end
+
+        function floatingFrame:CreateCheckbox(text, icon, default, callback)
+            return APTX:Checkbox("Section", text, icon, default, callback)
+        end
+
+        function floatingFrame:CreateKeybind(text, icon, default, callback)
+            return APTX:Keybind("Section", text, icon, default, callback)
+        end
+
+        function floatingFrame:CreateColorPicker(text, icon, default, callback)
+            return APTX:ColorPicker("Section", text, icon, default, callback)
+        end
+
+        function floatingFrame:CreateTabContainer(title, tabs, default)
+            return APTX:TabContainer("Section", title, tabs, default)
+        end
+
+        table.insert(APTX._floatingFrames, floatingFrame)
+        return floatingFrame
+    end)
+    if not ok then
+        warn("[APTX:FloatingFrame] Error: " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+function APTX:GetFloatingFrames()
+    return APTX._floatingFrames
+end
+
+function APTX:DestroyFloatingFrame(index)
+    if APTX._floatingFrames[index] then
+        APTX._floatingFrames[index]:Destroy()
+        table.remove(APTX._floatingFrames, index)
+    end
+end
+
 local function formatArgs(...)
     local args = {...}
     local parts = {}
@@ -2786,336 +4666,17 @@ local function formatArgs(...)
     return table.concat(parts, ", ")
 end
 
---- Utility: safely hook a function
 local function safeHook(func, hook)
     local ok, orig = pcall(hookfunction, func, hook)
     if ok then return orig end
     return nil
 end
 
---- Utility: find last index of a character in a string
 local function lastIndexOf(str, char)
     for i = #str, 1, -1 do
         if str:sub(i, i) == char then return i end
     end
     return nil
-end
-
-
-
--- ============================================================
--- FLOATING FRAME SYSTEM — Ventanas flotantes para logs/monitoreo
--- ============================================================
-APTX._floatingFrames = {}
-local FF_Z_BASE = 600
-
-function APTX:FloatingFrame(title, width, height, opts)
-    opts = opts or {}
-    local player = Players.LocalPlayer
-    if not player then
-        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-        player = Players.LocalPlayer
-    end
-    local playerGui = player:WaitForChild("PlayerGui")
-
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "FFrame_" .. tostring(#APTX._floatingFrames + 1)
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = playerGui
-
-    local w = width or 420
-    local h = height or 300
-    local headerH = 32
-    local x = opts.x or (80 + (#APTX._floatingFrames * 30))
-    local y = opts.y or (80 + (#APTX._floatingFrames * 30))
-
-    local frame = newF({
-        Name = "FloatingFrame",
-        Size = UDim2.new(0, w, 0, h),
-        Position = UDim2.new(0, x, 0, y),
-        BackgroundColor3 = Theme.FloatingBg,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
-        ZIndex = FF_Z_BASE + 1,
-    }, gui)
-    newC(frame, 10)
-    local frameStroke = newS(frame, Theme.FloatingBorder, 1)
-
-    local shadow = newF({
-        Size = UDim2.new(1, 12, 1, 12),
-        Position = UDim2.new(0.5, -6, 0.5, -6),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 0.88,
-        BorderSizePixel = 0,
-        ZIndex = FF_Z_BASE,
-    }, gui)
-    newC(shadow, 12)
-    local posSync = frame:GetPropertyChangedSignal("Position"):Connect(function()
-        if shadow and shadow.Parent then
-            shadow.Position = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset - 6, frame.Position.Y.Scale, frame.Position.Y.Offset - 6)
-        end
-    end)
-    local sizeSync = frame:GetPropertyChangedSignal("Size"):Connect(function()
-        if shadow and shadow.Parent then
-            shadow.Size = UDim2.new(1, frame.Size.X.Offset + 12, 1, frame.Size.Y.Offset + 12)
-        end
-    end)
-    shadow.Size = UDim2.new(1, w + 12, 1, h + 12)
-    shadow.Position = UDim2.new(0, x - 6, 0, y - 6)
-
-    local header = newF({
-        Name = "FFHeader",
-        Size = UDim2.new(1, 0, 0, headerH),
-        BackgroundColor3 = Color3.fromRGB(8, 8, 8),
-        BorderSizePixel = 0,
-        ZIndex = FF_Z_BASE + 2,
-    }, frame)
-    local headerHL = Instance.new("UIStroke")
-    headerHL.Color = Theme.BrandLo
-    headerHL.Thickness = 1
-    headerHL.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    headerHL.Transparency = 0.85
-    headerHL.Parent = header
-
-    local titleLbl = newL({
-        Name = "FFTitle",
-        Size = UDim2.new(1, -80, 1, 0),
-        Position = UDim2.new(0, 10, 0, 0),
-        BackgroundTransparency = 1,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = FF_Z_BASE + 3,
-    }, header)
-
-    local btnFrame = newF({
-        Size = UDim2.new(0, 72, 1, 0),
-        Position = UDim2.new(1, -76, 0, 0),
-        BackgroundTransparency = 1,
-        ZIndex = FF_Z_BASE + 3,
-    }, header)
-    local btnLayout = Instance.new("UIListLayout")
-    btnLayout.FillDirection = Enum.FillDirection.Horizontal
-    btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-    btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    btnLayout.Padding = UDim.new(0, 4)
-    btnLayout.Parent = btnFrame
-
-    local pinBtn = newB({
-        Size = UDim2.new(0, 22, 0, 22),
-        BackgroundTransparency = 1,
-        Text = "\u{1F4CC}",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 12,
-        Font = Enum.Font.Gotham,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        ZIndex = FF_Z_BASE + 4,
-    }, btnFrame)
-    local pinned = false
-    pinBtn.MouseButton1Click:Connect(function()
-        pinned = not pinned
-        pinBtn.TextColor3 = pinned and Theme.BrandMid or Theme.TextSecondary
-    end)
-
-    local closeBtn = newB({
-        Size = UDim2.new(0, 22, 0, 22),
-        BackgroundTransparency = 1,
-        Text = "\u{2715}",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 14,
-        Font = Enum.Font.Gotham,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        ZIndex = FF_Z_BASE + 4,
-    }, btnFrame)
-    closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Theme.Error}, TI_HOVER) end)
-    closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = Theme.TextSecondary}, TI_HOVER) end)
-
-    local content = newF({
-        Name = "FFContent",
-        Size = UDim2.new(1, -4, 1, -(headerH + 4)),
-        Position = UDim2.new(0, 2, 0, headerH + 2),
-        BackgroundTransparency = 1,
-        ZIndex = FF_Z_BASE + 2,
-    }, frame)
-
-    local logList = Instance.new("ScrollingFrame")
-    logList.Name = "FFLogList"
-    logList.Size = UDim2.new(1, -4, 1, -30)
-    logList.Position = UDim2.new(0, 2, 0, 0)
-    logList.BackgroundTransparency = 1
-    logList.BorderSizePixel = 0
-    logList.ScrollBarThickness = 2
-    logList.ScrollBarImageColor3 = Theme.Border
-    logList.ScrollBarImageTransparency = 0.6
-    logList.ElasticBehavior = Enum.ElasticBehavior.Always
-    logList.CanvasSize = UDim2.new(0, 0, 0, 0)
-    logList.Parent = content
-
-    local logLayout = Instance.new("UIListLayout")
-    logLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    logLayout.Padding = UDim.new(0, 1)
-    logLayout.Parent = logList
-    local logLayoutConn = logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        logList.CanvasSize = UDim2.new(0, 0, 0, logLayout.AbsoluteContentSize.Y + 2)
-    end)
-
-    local bottomBar = newF({
-        Size = UDim2.new(1, -4, 0, 26),
-        Position = UDim2.new(0, 2, 1, -28),
-        BackgroundTransparency = 1,
-        ZIndex = FF_Z_BASE + 3,
-    }, content)
-
-    local statusLabel = newL({
-        Size = UDim2.new(0, 100, 1, 0),
-        Position = UDim2.new(0, 4, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        TextColor3 = Theme.TextDisabled,
-        Font = Enum.Font.Gotham,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = FF_Z_BASE + 4,
-    }, bottomBar)
-
-    local autoScroll = true
-    local autoScrollBtn = newB({
-        Size = UDim2.new(0, 50, 1, 0),
-        Position = UDim2.new(1, -104, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "AUTO⏺",
-        TextColor3 = Theme.BrandMid,
-        TextSize = 9,
-        Font = Enum.Font.GothamBold,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        ZIndex = FF_Z_BASE + 4,
-    }, bottomBar)
-    autoScrollBtn.MouseButton1Click:Connect(function()
-        autoScroll = not autoScroll
-        autoScrollBtn.TextColor3 = autoScroll and Theme.BrandMid or Theme.TextDisabled
-    end)
-
-    local clearBtn = newB({
-        Size = UDim2.new(0, 50, 1, 0),
-        Position = UDim2.new(1, -52, 0, 0),
-        BackgroundTransparency = 1,
-        Text = "CLEAR",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 9,
-        Font = Enum.Font.GothamBold,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        ZIndex = FF_Z_BASE + 4,
-    }, bottomBar)
-    clearBtn.MouseButton1Click:Connect(function()
-        for _, child in ipairs(logList:GetChildren()) do
-            if child:IsA("TextLabel") or (child:IsA("Frame") and not child:IsA("UIListLayout")) then
-                child:Destroy()
-            end
-        end
-        logLayout.AbsoluteContentSize = UDim2.new(0, 0, 0, 0)
-    end)
-
-    local dragConns = makeDraggable(header, frame)
-    for _, conn in ipairs(dragConns) do table.insert(APTX._connections, conn) end
-
-    local zCounter = FF_Z_BASE + 5
-    local function bringToFront()
-        zCounter = zCounter + 1
-        frame.ZIndex = zCounter
-        shadow.ZIndex = zCounter - 1
-        for _, child in ipairs(frame:GetDescendants()) do
-            if child:IsA("GuiObject") then
-                child.ZIndex = child.ZIndex + 2
-            end
-        end
-    end
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            bringToFront()
-        end
-    end)
-
-    local _alive = true
-    closeBtn.MouseButton1Click:Connect(function()
-        if _alive then
-            _alive = false
-            tw(frame, {Size = UDim2.new(0, w, 0, 0), BackgroundTransparency = 1}, TI_MED)
-            tw(shadow, {BackgroundTransparency = 1}, TI_MED)
-            task.delay(0.25, function()
-                if gui and gui.Parent then gui:Destroy() end
-            end)
-        end
-    end)
-
-    local floatingFrame = {
-        _frame = frame, _gui = gui,
-        _logList = logList, _logLayout = logLayout,
-        _statusLabel = statusLabel, _autoScroll = autoScroll,
-        _alive = _alive, _pinned = pinned, _visible = true,
-
-        AddLog = function(self, text, color, icon)
-            if not self._alive then return end
-            local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
-            if icon then
-                newL({Size = UDim2.new(0, 16, 1, 0), Position = UDim2.new(0, 2, 0, 0), BackgroundTransparency = 1, Text = icon, TextColor3 = color or Theme.TextSecondary, TextSize = 10, Font = Enum.Font.Gotham, ZIndex = FF_Z_BASE + 4}, line)
-            end
-            newL({Size = UDim2.new(1, icon and -22 or -6, 1, 0), Position = UDim2.new(0, icon and 20 or 4, 0, 0), BackgroundTransparency = 1, Text = text, TextColor3 = color or Theme.LogDefault, TextSize = 11, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
-            if autoScroll then
-                task.delay(0.02, function()
-                    if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
-                end)
-            end
-            return line
-        end,
-
-        AddRichLog = function(self, parts)
-            if not self._alive then return end
-            local line = newF({Size = UDim2.new(1, -4, 0, 18), BackgroundTransparency = 1, ZIndex = FF_Z_BASE + 3}, logList)
-            local xOff = 4
-            for _, part in ipairs(parts) do
-                local seg = newL({Size = UDim2.new(0, part.width or 0, 1, 0), Position = UDim2.new(0, xOff, 0, 0), BackgroundTransparency = 1, Text = part.text or "", TextColor3 = part.color or Theme.LogDefault, TextSize = part.size or 11, Font = part.bold and Enum.Font.GothamBold or Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = FF_Z_BASE + 4}, line)
-                local w = seg.TextBounds.X + 4
-                seg.Size = UDim2.new(0, w, 1, 0)
-                xOff = xOff + w
-            end
-            if autoScroll then
-                task.delay(0.02, function()
-                    if logList and logList.Parent then logList.CanvasPosition = Vector2.new(0, math.huge) end
-                end)
-            end
-            return line
-        end,
-
-        SetStatus = function(self, text, color)
-            if not self._alive then return end
-            statusLabel.Text = text or ""
-            statusLabel.TextColor3 = color or Theme.TextDisabled
-        end,
-
-        Clear = function(self)
-            if not self._alive then return end
-            for _, child in ipairs(logList:GetChildren()) do
-                if child:IsA("TextLabel") or (child:IsA("Frame") and child.Name ~= "_noop") then pcall(child.Destroy, child) end
-            end
-        end,
-
-        Show = function(self) if not self._alive then return end; frame.Visible = true; shadow.Visible = true; self._visible = true end,
-        Hide = function(self) if not self._alive then return end; frame.Visible = false; shadow.Visible = false; self._visible = false end,
-        Toggle = function(self) if self._visible then self:Hide() else self:Show() end end,
-        SetTitle = function(self, t) if not self._alive then return end; titleLbl.Text = t or title end,
-        Destroy = function(self) self._alive = false; if gui and gui.Parent then gui:Destroy() end end,
-        BringToFront = bringToFront,
-        IsPinned = function(self) return pinned end,
-    }
-    table.insert(APTX._floatingFrames, floatingFrame)
-    return floatingFrame
 end
 
 APTX.Theme = Theme
