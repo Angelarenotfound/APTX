@@ -394,7 +394,7 @@ function KillersModule.Init(cfg)
 
     setupButtonListenerKiller()
 
-    killerPlayer:WaitForChild("PlayerGui"):ChildAdded:Connect(function(child)
+    killerPlayer:WaitForChild("PlayerGui").ChildAdded:Connect(function(child)
         if child:IsA("ScreenGui") then
             setupButtonListenerKiller()
         end
@@ -873,28 +873,26 @@ local function patchFlowGame()
     if gameModule.new then
         local oldNew = gameModule.new
         gameModule.new = function(...)
-            local success, result = pcall(function()
-                return oldNew(...)
-            end)
+    local success, result = pcall(oldNew, ...)   -- ✅ ... usado en scope válido
 
-            if not success or not result then
-                warn("Error al crear nuevo FlowGame: " .. tostring(result))
-                return result
-            end
+    if not success or not result then
+        warn("Error al crear nuevo FlowGame: " .. tostring(result))
+        return result
+    end
 
-            local puzzle = result
+    local puzzle = result
 
-            task.spawn(function()
-                local success = safeCall(function()
-                    HintSystem:DrawSolutionOneByOne(puzzle)
-                end)
-                if not success then
-                    warn("Error al ejecutar HintSystem")
-                end
-            end)
-
-            return puzzle
+    task.spawn(function()
+        local success = safeCall(function()
+            HintSystem:DrawSolutionOneByOne(puzzle)
+        end)
+        if not success then
+            warn("Error al ejecutar HintSystem")
         end
+    end)
+
+    return puzzle
+end
     else
         warn("El módulo FlowGame no tiene función 'new'")
         return nil
