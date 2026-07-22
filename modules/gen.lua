@@ -5,7 +5,27 @@ local config = {
     speed = 0.03
 }
 
+local function safeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("Error en función: " .. tostring(result))
+        return nil, result
+    end
+    return result
+end
+
+local function safeWait(delay)
+    if type(delay) ~= "number" or delay < 0 then
+        delay = 0.03
+    end
+    task.wait(delay)
+end
+
 local function getDirection(currentRow, currentCol, otherRow, otherCol)
+    if not currentRow or not currentCol or not otherRow or not otherCol then
+        return nil
+    end
+    
     if otherRow < currentRow then
         return "up"
     end
@@ -18,35 +38,45 @@ local function getDirection(currentRow, currentCol, otherRow, otherCol)
     if otherCol > currentCol then
         return "right"
     end
+    return nil
 end
 
 local function getConnections(prev, curr, nextnode)
     local connections = {}
+    
     if prev and curr then
         local dir = getDirection(curr.row, curr.col, prev.row, prev.col)
-        if dir == "up" then
-            dir = "down"
-        elseif dir == "down" then
-            dir = "up"
-        elseif dir == "left" then
-            dir = "right"
-        elseif dir == "right" then
-            dir = "left"
-        end
-        if dir ~= "" and dir then
-            connections[dir] = true
+        if dir then
+            if dir == "up" then
+                dir = "down"
+            elseif dir == "down" then
+                dir = "up"
+            elseif dir == "left" then
+                dir = "right"
+            elseif dir == "right" then
+                dir = "left"
+            end
+            if dir ~= "" and dir then
+                connections[dir] = true
+            end
         end
     end
+    
     if nextnode and curr then
         local dir = getDirection(curr.row, curr.col, nextnode.row, nextnode.col)
-        if dir ~= "" and dir then
+        if dir and dir ~= "" then
             connections[dir] = true
         end
     end
+    
     return connections
 end
 
 local function isNeighbourLocal(r1, c1, r2, c2)
+    if not r1 or not c1 or not r2 or not c2 then
+        return false
+    end
+    
     if r2 == r1 - 1 and c2 == c1 then
         return "up"
     end
@@ -63,32 +93,44 @@ local function isNeighbourLocal(r1, c1, r2, c2)
 end
 
 local function coordKey(node)
+    if not node or not node.row or not node.col then
+        return nil
+    end
     return string.format("%d-%d", node.row, node.col)
 end
 
 local function orderPathFromEndpoints(path, endpoints)
     if not path or #path == 0 then
-        return path
+        return path or {}
     end
     
-    local startEndpoint
-    for _, ep in endpoints or {} do
-        for _, n in path do
-            if n.row == ep.row and n.col == ep.col then
-                startEndpoint = { row = ep.row, col = ep.col }
+    local startEndpoint = nil
+    
+    if endpoints and type(endpoints) == "table" then
+        for _, ep in endpoints do
+            if ep and ep.row and ep.col then
+                for _, n in path do
+                    if n.row == ep.row and n.col == ep.col then
+                        startEndpoint = { row = ep.row, col = ep.col }
+                        break
+                    end
+                end
+            end
+            if startEndpoint then
                 break
             end
-        end
-        if startEndpoint then
-            break
         end
     end
     
     if not startEndpoint then
         local inPath = {}
         for _, n in path do
-            inPath[coordKey(n)] = n
+            local key = coordKey(n)
+            if key then
+                inPath[key] = n
+            end
         end
+        
         for _, n in path do
             local neighbours = 0
             local dirs = {
@@ -99,7 +141,8 @@ local function orderPathFromEndpoints(path, endpoints)
             }
             for _, dir in dirs do
                 local r, c = dir[1], dir[2]
-                if inPath[string.format("%d-%d", r, c)] ~= nil then
+                local key = string.format("%d-%d", r, c)
+                if inPath[key] ~= nil then
                     neighbours = neighbours + 1
                 end
             end
@@ -110,19 +153,30 @@ local function orderPathFromEndpoints(path, endpoints)
         end
     end
     
-    if not startEndpoint then
+    if not startEndpoint and path[1] then
         startEndpoint = { row = path[1].row, col = path[1].col }
+    end
+    
+    if not startEndpoint then
+        return path
     end
     
     local remaining = {}
     for _, n in path do
-        remaining[coordKey(n)] = { row = n.row, col = n.col }
+        local key = coordKey(n)
+        if key then
+            remaining[key] = { row = n.row, col = n.col }
+        end
     end
     
     local ordered = {}
     local current = { row = startEndpoint.row, col = startEndpoint.col }
     table.insert(ordered, table.clone(current))
-    remaining[coordKey(current)] = nil
+    
+    local key = coordKey(current)
+    if key then
+        remaining[key] = nil
+    end
     
     while true do
         local size = 0
@@ -135,7 +189,8 @@ local function orderPathFromEndpoints(path, endpoints)
         
         local foundNext = false
         for key, node in remaining do
-            if isNeighbourLocal(current.row, current.col, node.row, node.col) then
+            local neighbour = isNeighbourLocal(current.row, current.col, node.row, node.col)
+            if neighbour then
                 table.insert(ordered, table.clone(node))
                 remaining[key] = nil
                 current = node
@@ -154,14 +209,29 @@ end
 local HintSystem = {}
 
 function HintSystem:DrawSolutionOneByOne(puzzle, delayTime)
-    if delayTime == nil then
-        delayTime = config.speed
-    end
-    if not config.enabled or not puzzle or not puzzle.Solution then
+    if not config.enabled then
         return nil
     end
     
+    if not puzzle or not puzzle.Solution then
+        warn("Puzzle no válido o sin solución")
+        return nil
+    end
+    
+    if delayTime == nil then
+        delayTime = config.speed
+    end
+    
+    if type(delayTime) ~= "number" or delayTime < 0 then
+        delayTime = 0.03
+    end
+    
     local totalPaths = #puzzle.Solution
+    if totalPaths == 0 then
+        warn("No hay caminos para dibujar")
+        return nil
+    end
+    
     local indices = {}
     for i = 1, totalPaths do
         table.insert(indices, i)
@@ -175,44 +245,202 @@ function HintSystem:DrawSolutionOneByOne(puzzle, delayTime)
     end
     
     for _, colorIndex in indices do
+        if not puzzle.Solution[colorIndex] then
+            warn("Índice de color " .. tostring(colorIndex) .. " no existe en la solución")
+            continue
+        end
+        
         local path = puzzle.Solution[colorIndex]
-        local endpoints = puzzle.targetPairs[colorIndex]
+        local endpoints = puzzle.targetPairs and puzzle.targetPairs[colorIndex]
         local orderedPath = orderPathFromEndpoints(path, endpoints)
         
+        if not orderedPath or #orderedPath == 0 then
+            warn("Camino ordenado vacío para color " .. tostring(colorIndex))
+            continue
+        end
+        
+        if not puzzle.paths then
+            puzzle.paths = {}
+        end
         puzzle.paths[colorIndex] = {}
+        
         for i = 0, #orderedPath - 1 do
             local node = orderedPath[i + 1]
-            table.insert(puzzle.paths[colorIndex], { row = node.row, col = node.col })
-            
-            local prev = orderedPath[i]
-            local nextNode = orderedPath[i + 2]
-            local conn = getConnections(prev, node, nextNode)
-            puzzle.gridConnections = puzzle.gridConnections or {}
-            puzzle.gridConnections[string.format("%d-%d", node.row, node.col)] = conn
-            
-            puzzle:updateGui()
-            task.wait(delayTime)
+            if node and node.row and node.col then
+                table.insert(puzzle.paths[colorIndex], { row = node.row, col = node.col })
+                
+                local prev = orderedPath[i]
+                local nextNode = orderedPath[i + 2]
+                local conn = getConnections(prev, node, nextNode)
+                
+                if not puzzle.gridConnections then
+                    puzzle.gridConnections = {}
+                end
+                local key = string.format("%d-%d", node.row, node.col)
+                puzzle.gridConnections[key] = conn
+                
+                local success = safeCall(function()
+                    if puzzle.updateGui then
+                        puzzle:updateGui()
+                    end
+                end)
+                
+                if not success then
+                    warn("Error al actualizar GUI")
+                end
+                
+                safeWait(delayTime)
+            end
         end
-        puzzle:checkForWin()
+        
+        local success = safeCall(function()
+            if puzzle.checkForWin then
+                puzzle:checkForWin()
+            end
+        end)
+        
+        if not success then
+            warn("Error al verificar victoria")
+        end
     end
-    puzzle:checkForWin()
+    
+    local success = safeCall(function()
+        if puzzle.checkForWin then
+            puzzle:checkForWin()
+        end
+    end)
+    
+    if not success then
+        warn("Error en verificación final")
+    end
 end
 
 local function patchFlowGame()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local FlowGameModule = require(ReplicatedStorage:WaitForChild("Modules"):FindFirstChild("Misc"):FindFirstChild("FlowGameManager"):FindFirstChild("FlowGame"))
+    local success, ReplicatedStorage = pcall(function()
+        return game:GetService("ReplicatedStorage")
+    end)
     
-    local oldNew = FlowGameModule.new
-    FlowGameModule.new = function(...)
-        local args = { ... }
-        local output = { oldNew(unpack(args)) }
-        local puzzle = output[1]
-        
-        task.spawn(function()
-            HintSystem:DrawSolutionOneByOne(puzzle)
+    if not success or not ReplicatedStorage then
+        warn("No se pudo obtener ReplicatedStorage")
+        return nil
+    end
+    
+    local Modules = nil
+    local attempts = 0
+    while not Modules and attempts < 10 do
+        local success, result = pcall(function()
+            return ReplicatedStorage:FindFirstChild("Modules")
         end)
-        
-        return puzzle
+        if success and result then
+            Modules = result
+            break
+        end
+        attempts = attempts + 1
+        task.wait(0.1)
+    end
+    
+    if not Modules then
+        warn("No se encontró el módulo Modules después de varios intentos")
+        return nil
+    end
+    
+    local Misc = nil
+    attempts = 0
+    while not Misc and attempts < 10 do
+        local success, result = pcall(function()
+            return Modules:FindFirstChild("Misc")
+        end)
+        if success and result then
+            Misc = result
+            break
+        end
+        attempts = attempts + 1
+        task.wait(0.1)
+    end
+    
+    if not Misc then
+        warn("No se encontró el módulo Misc")
+        return nil
+    end
+    
+    local FlowGameManager = nil
+    attempts = 0
+    while not FlowGameManager and attempts < 10 do
+        local success, result = pcall(function()
+            return Misc:FindFirstChild("FlowGameManager")
+        end)
+        if success and result then
+            FlowGameManager = result
+            break
+        end
+        attempts = attempts + 1
+        task.wait(0.1)
+    end
+    
+    if not FlowGameManager then
+        warn("No se encontró FlowGameManager")
+        return nil
+    end
+    
+    local FlowGameModule = nil
+    attempts = 0
+    while not FlowGameModule and attempts < 10 do
+        local success, result = pcall(function()
+            return FlowGameManager:FindFirstChild("FlowGame")
+        end)
+        if success and result then
+            FlowGameModule = result
+            break
+        end
+        attempts = attempts + 1
+        task.wait(0.1)
+    end
+    
+    if not FlowGameModule then
+        warn("No se encontró el módulo FlowGame")
+        return nil
+    end
+    
+    local gameModule = nil
+    local success, result = pcall(function()
+        return require(FlowGameModule)
+    end)
+    
+    if not success or not result then
+        warn("No se pudo cargar el módulo FlowGame: " .. tostring(result))
+        return nil
+    end
+    
+    gameModule = result
+    
+    if gameModule.new then
+        local oldNew = gameModule.new
+        gameModule.new = function(...)
+            local success, result = pcall(function()
+                return oldNew(...)
+            end)
+            
+            if not success or not result then
+                warn("Error al crear nuevo FlowGame: " .. tostring(result))
+                return result
+            end
+            
+            local puzzle = result
+            
+            task.spawn(function()
+                local success = safeCall(function()
+                    HintSystem:DrawSolutionOneByOne(puzzle)
+                end)
+                if not success then
+                    warn("Error al ejecutar HintSystem")
+                end
+            end)
+            
+            return puzzle
+        end
+    else
+        warn("El módulo FlowGame no tiene función 'new'")
+        return nil
     end
 end
 
@@ -231,7 +459,10 @@ function Gen.Speed(speed)
 end
 
 task.spawn(function()
-    patchFlowGame()
+    local success = safeCall(patchFlowGame)
+    if not success then
+        warn("Error al parchear FlowGame")
+    end
 end)
 
 return Gen
