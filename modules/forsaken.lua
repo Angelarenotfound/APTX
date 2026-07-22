@@ -211,7 +211,7 @@ function VeeModule.Stop()
 end
 
 -- ============================================================
--- MÓDULO: KILLERS (Follow Up)
+-- MÓDULO: KILLERS (Follow Up) - CORREGIDO
 -- ============================================================
 local KillersModule = {}
 
@@ -231,13 +231,13 @@ local killerButtonConnection = nil
 local function getPlayerKiller()
     local char = killerPlayer.Character
     if not char then return nil end
-    
+
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
-    
+
     local closest = nil
     local minDist = math.huge
-    
+
     for _, p in ipairs(KillersPlayers:GetPlayers()) do
         if p ~= killerPlayer then
             local pChar = p.Character
@@ -253,7 +253,7 @@ local function getPlayerKiller()
             end
         end
     end
-    
+
     return closest
 end
 
@@ -261,36 +261,36 @@ local function rotateKiller()
     if not killerFollowing or not killerTarget then
         return
     end
-    
+
     local char = killerPlayer.Character
     if not char then
         killerFollowing = false
         return
     end
-    
+
     local root = char:FindFirstChild("HumanoidRootPart")
     local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
-    
+
     if not root or not torso then
         killerFollowing = false
         return
     end
-    
+
     local tChar = killerTarget.Character
     if not tChar then
         killerFollowing = false
         return
     end
-    
+
     local tRoot = tChar:FindFirstChild("HumanoidRootPart")
     if not tRoot then
         killerFollowing = false
         return
     end
-    
+
     local dir = (tRoot.Position - root.Position).Unit
     local look = CFrame.lookAt(root.Position, root.Position + dir)
-    
+
     pcall(function()
         root.CFrame = look
         torso.CFrame = CFrame.new(torso.Position, torso.Position + dir)
@@ -300,7 +300,7 @@ end
 local function stopFollowKiller()
     killerFollowing = false
     killerTarget = nil
-    
+
     if killerConnection then
         killerConnection:Disconnect()
         killerConnection = nil
@@ -311,27 +311,27 @@ local function startFollowKiller()
     if not killerActive then
         return
     end
-    
+
     if killerFollowing then
         stopFollowKiller()
     end
-    
+
     killerTarget = getPlayerKiller()
-    
+
     if not killerTarget then
         return
     end
-    
+
     killerFollowing = true
-    
+
     if killerConnection then
         killerConnection:Disconnect()
     end
-    
+
     killerConnection = KillersRunService.Stepped:Connect(rotateKiller)
-    
+
     task.wait(killerConfig.FollowUpTime or 10)
-    
+
     if killerFollowing then
         stopFollowKiller()
     end
@@ -341,7 +341,7 @@ local function onKeyKiller(input, processed)
     if processed then
         return
     end
-    
+
     if input.KeyCode == killerConfig.FollowUpKey then
         startFollowKiller()
     end
@@ -352,21 +352,21 @@ local function setupButtonListenerKiller()
         killerButtonConnection:Disconnect()
         killerButtonConnection = nil
     end
-    
+
     if not killerConfig.ButtonPath then
         return
     end
-    
+
     local gui = killerPlayer:FindFirstChild("PlayerGui")
     if not gui then
         return
     end
-    
+
     local button = gui:FindFirstChild(killerConfig.ButtonPath)
     if not button then
         return
     end
-    
+
     killerButtonConnection = button.MouseButton1Click:Connect(function()
         if killerActive then
             startFollowKiller()
@@ -378,22 +378,22 @@ function KillersModule.Init(cfg)
     if not cfg then
         error("Configuración requerida")
     end
-    
+
     killerConfig = {
         FollowUpTime = cfg.FollowUpTime or 10,
         FollowUpKey = cfg.FollowUpKey or Enum.KeyCode.G,
         MaxDistance = cfg.MaxDistance or 100,
         ButtonPath = cfg.ButtonPath or "MainUI.AbilityContainer.Slash"
     }
-    
+
     if killerKeyConnection then
         killerKeyConnection:Disconnect()
     end
-    
+
     killerKeyConnection = KillersUIS.InputBegan:Connect(onKeyKiller)
-    
+
     setupButtonListenerKiller()
-    
+
     killerPlayer:WaitForChild("PlayerGui"):ChildAdded:Connect(function(child)
         if child:IsA("ScreenGui") then
             setupButtonListenerKiller()
@@ -405,9 +405,9 @@ function KillersModule.FollowUp(state)
     if state == nil then
         error("Estado requerido (true/false)")
     end
-    
+
     killerActive = state
-    
+
     if not state then
         stopFollowKiller()
     end
@@ -415,27 +415,28 @@ end
 
 function KillersModule.Destroy()
     stopFollowKiller()
-    
+
     if killerKeyConnection then
         killerKeyConnection:Disconnect()
         killerKeyConnection = nil
     end
-    
+
     if killerButtonConnection then
         killerButtonConnection:Disconnect()
         killerButtonConnection = nil
     end
-    
+
     killerActive = false
     killerFollowing = false
     killerTarget = nil
     killerConfig = {}
 end
 
+-- Conexión para resetear estado cuando el personaje muere
 killerPlayer.CharacterAdded:Connect(function()
     killerFollowing = false
     killerTarget = nil
-    
+
     if killerConnection then
         killerConnection:Disconnect()
         killerConnection = nil
@@ -451,6 +452,17 @@ local genConfig = {
     enabled = false,
     speed = 0.03
 }
+
+-- Implementación de table.clone
+if not table.clone then
+    function table.clone(t)
+        local result = {}
+        for k, v in pairs(t) do
+            result[k] = v
+        end
+        return result
+    end
+end
 
 local function safeCall(func, ...)
     local success, result = pcall(func, ...)
@@ -692,62 +704,60 @@ function HintSystem:DrawSolutionOneByOne(puzzle, delayTime)
     end
 
     for _, colorIndex in indices do
-        if not puzzle.Solution[colorIndex] then
-            warn("Índice de color " .. tostring(colorIndex) .. " no existe en la solución")
-            continue
-        end
+        if puzzle.Solution[colorIndex] then
+            local path = puzzle.Solution[colorIndex]
+            local endpoints = puzzle.targetPairs and puzzle.targetPairs[colorIndex]
+            local orderedPath = orderPathFromEndpoints(path, endpoints)
 
-        local path = puzzle.Solution[colorIndex]
-        local endpoints = puzzle.targetPairs and puzzle.targetPairs[colorIndex]
-        local orderedPath = orderPathFromEndpoints(path, endpoints)
-
-        if not orderedPath or #orderedPath == 0 then
-            warn("Camino ordenado vacío para color " .. tostring(colorIndex))
-            continue
-        end
-
-        if not puzzle.paths then
-            puzzle.paths = {}
-        end
-        puzzle.paths[colorIndex] = {}
-
-        for i = 0, #orderedPath - 1 do
-            local node = orderedPath[i + 1]
-            if node and node.row and node.col then
-                table.insert(puzzle.paths[colorIndex], { row = node.row, col = node.col })
-
-                local prev = orderedPath[i]
-                local nextNode = orderedPath[i + 2]
-                local conn = getConnections(prev, node, nextNode)
-
-                if not puzzle.gridConnections then
-                    puzzle.gridConnections = {}
+            if orderedPath and #orderedPath > 0 then
+                if not puzzle.paths then
+                    puzzle.paths = {}
                 end
-                local key = string.format("%d-%d", node.row, node.col)
-                puzzle.gridConnections[key] = conn
+                puzzle.paths[colorIndex] = {}
+
+                for i = 0, #orderedPath - 1 do
+                    local node = orderedPath[i + 1]
+                    if node and node.row and node.col then
+                        table.insert(puzzle.paths[colorIndex], { row = node.row, col = node.col })
+
+                        local prev = orderedPath[i]
+                        local nextNode = orderedPath[i + 2]
+                        local conn = getConnections(prev, node, nextNode)
+
+                        if not puzzle.gridConnections then
+                            puzzle.gridConnections = {}
+                        end
+                        local key = string.format("%d-%d", node.row, node.col)
+                        puzzle.gridConnections[key] = conn
+
+                        local success = safeCall(function()
+                            if puzzle.updateGui then
+                                puzzle:updateGui()
+                            end
+                        end)
+
+                        if not success then
+                            warn("Error al actualizar GUI")
+                        end
+
+                        safeWait(delayTime)
+                    end
+                end
 
                 local success = safeCall(function()
-                    if puzzle.updateGui then
-                        puzzle:updateGui()
+                    if puzzle.checkForWin then
+                        puzzle:checkForWin()
                     end
                 end)
 
                 if not success then
-                    warn("Error al actualizar GUI")
+                    warn("Error al verificar victoria")
                 end
-
-                safeWait(delayTime)
+            else
+                warn("Camino ordenado vacío para color " .. tostring(colorIndex))
             end
-        end
-
-        local success = safeCall(function()
-            if puzzle.checkForWin then
-                puzzle:checkForWin()
-            end
-        end)
-
-        if not success then
-            warn("Error al verificar victoria")
+        else
+            warn("Índice de color " .. tostring(colorIndex) .. " no existe en la solución")
         end
     end
 
@@ -1325,24 +1335,24 @@ local function SetupButtonListener()
         DaggerLocalPlayer:WaitForChild("PlayerGui")
         pg = DaggerLocalPlayer.PlayerGui
     end
-    
+
     local mui = pg:FindFirstChild("MainUI")
     if not mui then
         mui = pg:WaitForChild("MainUI")
     end
-    
+
     local ac = mui:FindFirstChild("AbilityContainer")
     if not ac then
         ac = mui:WaitForChild("AbilityContainer")
     end
-    
+
     local button = ac:FindFirstChild("Dagger")
     if not button then
         button = ac:WaitForChild("Dagger")
     end
-    
+
     ConnectButtonListener()
-    
+
     local function onButtonChanged()
         local newButton = ac:FindFirstChild("Dagger")
         if newButton and not DaggerState.ButtonConnected then
@@ -1352,14 +1362,14 @@ local function SetupButtonListener()
             DaggerState.ButtonConnection = nil
         end
     end
-    
+
     ac.ChildAdded:Connect(function(child)
         if child.Name == "Dagger" then
             task.wait(0.1)
             ConnectButtonListener()
         end
     end)
-    
+
     ac.ChildRemoved:Connect(function(child)
         if child.Name == "Dagger" then
             DaggerState.ButtonConnected = false
