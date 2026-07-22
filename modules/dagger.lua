@@ -26,7 +26,8 @@ local State = {
     LastTP = 0,
     isTPActive = false,
     RangeIndicator = nil,
-    TargetKiller = nil
+    TargetKiller = nil,
+    ButtonConnected = false
 }
 
 local function DebugLog(...)
@@ -102,7 +103,7 @@ local function SmartArcMovement(hrp, khrp, targetCFrame, duration)
     local startPos = hrp.Position
     local endPos = targetCFrame.Position
     local dist = (endPos - startPos).Magnitude
-    
+
     if dist < 3 then
         local steps = math.floor(duration / 0.02)
         if steps < 1 then steps = 1 end
@@ -117,7 +118,7 @@ local function SmartArcMovement(hrp, khrp, targetCFrame, duration)
         hrp.CFrame = targetCFrame
         return
     end
-    
+
     local midPoint = (startPos + endPos) / 2
     local direction = (endPos - startPos).Unit
     local perpendicular = Vector3.new(-direction.Z, 0, direction.X).Unit
@@ -126,14 +127,14 @@ local function SmartArcMovement(hrp, khrp, targetCFrame, duration)
     if perpendicular:Dot(toKiller) < 0 then
         side = -1
     end
-    
+
     local arcHeight = math.min(Config.ArcHeight, dist * 0.4)
     local arcPoint = midPoint + perpendicular * arcHeight * side + Vector3.new(0, 0.3, 0)
-    
+
     local steps = math.floor(duration / 0.015)
     if steps < 1 then steps = 1 end
     local stepTime = duration / steps
-    
+
     for i = 1, steps do
         local alpha = i / steps
         local smoothAlpha = alpha * alpha * (3 - 2 * alpha)
@@ -144,7 +145,7 @@ local function SmartArcMovement(hrp, khrp, targetCFrame, duration)
         hrp.CFrame = CFrame.new(currentPos, lookTarget)
         task.wait(stepTime)
     end
-    
+
     hrp.CFrame = targetCFrame
 end
 
@@ -175,14 +176,14 @@ local function CreateDashEffect(startPos, endPos)
     part.BrickColor = BrickColor.new("Bright blue")
     part.Transparency = 0.5
     part.Parent = Workspace
-    
+
     local trail = Instance.new("Trail")
     trail.Parent = part
     trail.Lifetime = 0.15
     trail.MinLength = 0.3
     trail.Color = ColorSequence.new(Color3.fromRGB(0, 150, 255))
     trail.Transparency = NumberSequence.new(0.7)
-    
+
     local tween = TweenService:Create(part, TweenInfo.new(0.2), {
         Transparency = 1,
         Size = Vector3.new(0.1, 0.1, 0.1)
@@ -201,7 +202,7 @@ local function UpdateRangeIndicator()
         end
         return
     end
-    
+
     local killer = GetKiller()
     if not killer then
         if State.RangeIndicator then
@@ -210,10 +211,10 @@ local function UpdateRangeIndicator()
         end
         return
     end
-    
+
     local khrp = GetHRP(killer)
     if not khrp then return end
-    
+
     if not State.RangeIndicator then
         local circle = Instance.new("Part")
         circle.Size = Vector3.new(Config.Range * 2, 0.1, Config.Range * 2)
@@ -225,24 +226,24 @@ local function UpdateRangeIndicator()
         circle.Transparency = 0.7
         circle.TopSurface = Enum.SurfaceType.Smooth
         circle.BottomSurface = Enum.SurfaceType.Smooth
-        
+
         local mesh = Instance.new("CylinderMesh")
         mesh.Parent = circle
-        
+
         local attachment = Instance.new("Attachment")
         attachment.Parent = circle
-        
+
         local highlight = Instance.new("Highlight")
         highlight.Parent = circle
         highlight.FillColor = Color3.fromRGB(0, 255, 100)
         highlight.OutlineColor = Color3.fromRGB(0, 255, 100)
         highlight.FillTransparency = 0.7
         highlight.OutlineTransparency = 0.5
-        
+
         State.RangeIndicator = circle
         State.RangeIndicator.Parent = Workspace
     end
-    
+
     State.RangeIndicator.Position = khrp.Position - Vector3.new(0, 0.5, 0)
     local inRange = false
     local char = GetChar()
@@ -255,7 +256,7 @@ local function UpdateRangeIndicator()
             end
         end
     end
-    
+
     if inRange then
         State.RangeIndicator.BrickColor = BrickColor.new("Bright green")
         State.RangeIndicator.Transparency = 0.5
@@ -270,66 +271,66 @@ local function TP()
         DebugLog("Dagger desactivado")
         return false
     end
-    
+
     if State.isTPActive then
         DebugLog("TP ya activo")
         return false
     end
-    
+
     local currentTime = os.clock()
     local timeSinceLast = currentTime - State.LastTP
     if timeSinceLast < Config.Cooldown then
         DebugLog("En cooldown:", timeSinceLast, "s")
         return false
     end
-    
+
     local daggerCD = GetCooldown()
     if daggerCD and daggerCD > 0.1 then
         DebugLog("Daga en cooldown")
         return false
     end
-    
+
     local char = GetChar()
     if not char then
         DebugLog("Personaje no disponible")
         return false
     end
-    
+
     local phrp = GetHRP(char)
     if not phrp then
         DebugLog("HRP no encontrado")
         return false
     end
-    
+
     local killer = GetKiller()
     if not killer then
         DebugLog("Killer no encontrado")
         return false
     end
-    
+
     local khrp = GetHRP(killer)
     if not khrp then
         DebugLog("HRP del killer no encontrado")
         return false
     end
-    
+
     local dist = (khrp.Position - phrp.Position).Magnitude
     if dist > Config.Range then
         DebugLog("Fuera de rango:", dist, ">", Config.Range)
         return false
     end
-    
+
     local lv = khrp.CFrame.LookVector.Unit
     local bp = khrp.Position - (lv * Config.BehindDist)
     local tp = Vector3.new(bp.X, phrp.Position.Y, bp.Z)
     local targetCFrame = CFrame.new(tp, tp + lv)
-    
+
     State.isTPActive = true
     local startPos = phrp.Position
     local success = false
-    
+
     local killerBehind = IsKillerBehind(phrp, khrp)
-    
+
     if Config.SmartMovement and killerBehind then
         success = pcall(function()
             SmartArcMovement(phrp, khrp, targetCFrame, Config.TweenDuration)
@@ -339,15 +340,15 @@ local function TP()
             DirectMovement(phrp, targetCFrame, Config.TweenDuration)
         end)
     end
-    
+
     if success then
         State.LastTP = currentTime
         DebugLog("TP exitoso")
-        
+
         task.spawn(function()
             CreateDashEffect(startPos, tp)
         end)
-        
+
         local startTime = tick()
         while tick() - startTime < Config.HoldDuration do
             local killer = GetKiller()
@@ -362,7 +363,7 @@ local function TP()
             end
             task.wait()
         end
-        
+
         State.isTPActive = false
         return true
     else
@@ -372,15 +373,107 @@ local function TP()
     end
 end
 
+-- Función para conectar el listener del botón
+local function ConnectButtonListener()
+    local button = GetDagger()
+    if not button then
+        DebugLog("Botón Dagger no encontrado para conectar listener")
+        return false
+    end
+
+    -- Desconectar listener anterior si existe
+    if State.ButtonConnected then
+        -- El listener se desconecta automáticamente cuando el botón se destruye
+        State.ButtonConnected = false
+    end
+
+    -- Conectar el nuevo listener
+    local connection
+    connection = button.MouseButton1Click:Connect(function()
+        DebugLog("Botón Dagger clickeado")
+        -- Verificar cooldown del botón
+        local cd = GetCooldown()
+        if cd and cd > 0.1 then
+            DebugLog("Botón en cooldown:", cd)
+            return
+        end
+        -- Ejecutar TP
+        task.spawn(TP)
+    end)
+
+    -- Guardar la conexión para poder desconectarla después si es necesario
+    State.ButtonConnection = connection
+    State.ButtonConnected = true
+    DebugLog("Listener del botón Dagger conectado exitosamente")
+    return true
+end
+
+-- Función para reconectar el listener cuando la GUI cambie
+local function SetupButtonListener()
+    -- Esperar a que la GUI esté disponible
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then
+        LocalPlayer:WaitForChild("PlayerGui")
+        pg = LocalPlayer.PlayerGui
+    end
+    
+    local mui = pg:FindFirstChild("MainUI")
+    if not mui then
+        mui = pg:WaitForChild("MainUI")
+    end
+    
+    local ac = mui:FindFirstChild("AbilityContainer")
+    if not ac then
+        ac = mui:WaitForChild("AbilityContainer")
+    end
+    
+    -- Esperar a que el botón Dagger aparezca
+    local button = ac:FindFirstChild("Dagger")
+    if not button then
+        button = ac:WaitForChild("Dagger")
+    end
+    
+    -- Conectar el listener
+    ConnectButtonListener()
+    
+    -- También escuchar cuando el botón se destruya y se vuelva a crear
+    local function onButtonChanged()
+        local newButton = ac:FindFirstChild("Dagger")
+        if newButton and not State.ButtonConnected then
+            ConnectButtonListener()
+        elseif not newButton and State.ButtonConnected then
+            State.ButtonConnected = false
+            State.ButtonConnection = nil
+        end
+    end
+    
+    -- Conectar a ChildAdded y ChildRemoved para detectar cambios
+    ac.ChildAdded:Connect(function(child)
+        if child.Name == "Dagger" then
+            task.wait(0.1) -- Pequeña espera para asegurar que el botón esté completamente cargado
+            ConnectButtonListener()
+        end
+    end)
+    
+    ac.ChildRemoved:Connect(function(child)
+        if child.Name == "Dagger" then
+            State.ButtonConnected = false
+            State.ButtonConnection = nil
+        end
+    end)
+end
+
+-- Eventos de entrada del usuario (keybinds)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not Config.Enabled then return end
-    
+
     if input.KeyCode == Config.Keybind or input.KeyCode == Config.AlternativeKey then
         task.spawn(TP)
     end
 end)
 
+-- Actualización del indicador de rango
 RunService.Heartbeat:Connect(function()
     if Config.ShowRange then
         UpdateRangeIndicator()
@@ -390,14 +483,39 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- Reconectar cuando el personaje se agregue
 LocalPlayer.CharacterAdded:Connect(function()
     State.isTPActive = false
     if State.RangeIndicator then
         State.RangeIndicator:Destroy()
         State.RangeIndicator = nil
     end
+    -- Reconfigurar el listener del botón
+    task.wait(1) -- Esperar a que la GUI se recargue
+    SetupButtonListener()
 end)
 
+-- Función para inicializar el módulo
+local function Initialize()
+    DebugLog("Inicializando Dagger...")
+    -- Intentar conectar el listener del botón
+    local success = pcall(SetupButtonListener)
+    if success then
+        DebugLog("Listener del botón inicializado correctamente")
+    else
+        DebugLog("Error al inicializar el listener del botón")
+    end
+end
+
+-- Inicializar cuando la GUI esté lista
+if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("MainUI") then
+    Initialize()
+else
+    LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("MainUI")
+    Initialize()
+end
+
+-- Funciones públicas
 function Dagger.State(enabled)
     Config.Enabled = enabled == true
     DebugLog("Estado:", enabled and "Activado" or "Desactivado")
@@ -521,12 +639,17 @@ function Dagger.GetStatus()
     print("Tecla principal:", Config.Keybind.Name)
     print("Tecla alternativa:", Config.AlternativeKey.Name)
     print("TP Activo:", State.isTPActive)
+    print("Listener del botón:", State.ButtonConnected and "Conectado" or "Desconectado")
     print("Killer:", GetKiller() and GetKiller().Name or "No encontrado")
     print("======================")
 end
 
 function Dagger.TP()
     return TP()
+end
+
+function Dagger.ReconnectButton()
+    return ConnectButtonListener()
 end
 
 DebugLog("=== DAGGER LOADED ===")
@@ -546,5 +669,6 @@ DebugLog("  Dagger.AltKey('ButtonL2') - Cambiar tecla alternativa")
 DebugLog("  Dagger.Debug(true/false) - Activar/desactivar debug")
 DebugLog("  Dagger.GetStatus() - Ver estado actual")
 DebugLog("  Dagger.TP() - Ejecutar TP manualmente")
+DebugLog("  Dagger.ReconnectButton() - Reconectar el listener del botón")
 
 return Dagger
