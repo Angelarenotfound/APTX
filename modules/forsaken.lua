@@ -1572,4 +1572,9 @@ DaggerDebug("Usa Dagger.GetStatus() para ver configuración")
 -- ============================================================
 -- EXPORTACIÓN DE MÓDULOS
 -- ============================================================
-return VeeModule, KillersModule, GenModule, DaggerModule
+return {
+    Vee = VeeModule,
+    Killers = KillersModule,
+    Gen = GenModule,
+    Dagger = DaggerModule
+}
