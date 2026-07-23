@@ -1,7 +1,3 @@
--- [[ FORSAKEN.LUA - Módulo Unificado ]]
--- Este archivo contiene todos los módulos fusionados: Vee, Killers, Gen y Dagger
--- Uso: local Vee, Killers, Gen, Dagger = loadstring(game:HttpGet("URL"))()
-
 -- ============================================================
 -- MÓDULO: VEE (Auto Sprint)
 -- ============================================================
@@ -29,17 +25,18 @@ local veeState = {
 }
 
 local function getBehaviorFolder()
-    return ReplicatedStorage:WaitForChild("Assets")
-        :WaitForChild("Survivors")
-        :WaitForChild("Veeronica")
-        :WaitForChild("Behavior")
+    local assets = ReplicatedStorage:WaitForChild("Assets", 15)
+    if not assets then return nil end
+    local surv = assets:WaitForChild("Survivors", 15)
+    if not surv then return nil end
+    local vee = surv:WaitForChild("Veeronica", 15)
+    if not vee then return nil end
+    return vee:WaitForChild("Behavior", 15)
 end
 
 local function getSprintingButton()
     return player.PlayerGui:WaitForChild("MainUI"):WaitForChild("SprintingButton")
 end
-
-local behaviorFolder = getBehaviorFolder()
 
 local function safeConnectPropertyChanged(instance, prop, fn)
     local ok, signal = pcall(function()
@@ -147,6 +144,12 @@ end
 
 local function startManager()
     if veeState.descendantAddedConn then return end
+
+    local behaviorFolder = getBehaviorFolder()   -- ✅ lazy
+    if not behaviorFolder then
+        warn("[Vee] Behavior folder no disponible aún")
+        return
+    end
 
     for _, desc in ipairs(behaviorFolder:GetDescendants()) do
         if desc:IsA("Highlight") then
@@ -1414,12 +1417,18 @@ local function InitializeDagger()
     end
 end
 
-if DaggerLocalPlayer:FindFirstChild("PlayerGui") and DaggerLocalPlayer.PlayerGui:FindFirstChild("MainUI") then
+task.spawn(function()
+    if DaggerLocalPlayer:FindFirstChild("PlayerGui")
+       and DaggerLocalPlayer.PlayerGui:FindFirstChild("MainUI") then
+        InitializeDagger()
+        return
+    end
+    local pg = DaggerLocalPlayer:WaitForChild("PlayerGui", 30)
+    if not pg then return end
+    local mui = pg:WaitForChild("MainUI", 30)
+    if not mui then return end
     InitializeDagger()
-else
-    DaggerLocalPlayer:WaitForChild("PlayerGui"):WaitForChild("MainUI")
-    InitializeDagger()
-end
+end)
 
 function DaggerModule.State(enabled)
     DaggerConfig.Enabled = enabled == true
