@@ -1,6 +1,6 @@
 local OPT = {}
-
 local shared = shared or _G
+
 if shared.SmartMapOptimizer then
     if shared.SmartMapOptimizer.StopAll then
         pcall(shared.SmartMapOptimizer.StopAll)
@@ -18,6 +18,7 @@ local Debris = game:GetService("Debris")
 local UserInputService = game:GetService("UserInputService")
 
 local weakKeys = { __mode = "k" }
+
 local tableClear = table.clear or function(t)
     for k in pairs(t) do
         t[k] = nil
@@ -77,7 +78,6 @@ local cfg = {
     explosionTransparency = 0.5,
     directory = nil,
     onTierChange = nil,
-
     MapsFolder = "Maps",
     MapContentModelName = "MAP",
     OptimizeWholeMap = false,
@@ -190,6 +190,7 @@ local owner = setmetatable({}, weakKeys)
 local globalConnections = {}
 local instanceConnections = setmetatable({}, weakKeys)
 local mapRunning = false
+
 local flags = {
     dirty = false,
     restart = false
@@ -735,7 +736,6 @@ end
 
 function TIERS[7].apply(t)
     t.conns = {}
-
     pcall(function()
         local cam = Workspace.CurrentCamera
         if cam and not _globalOrig.Camera then
@@ -747,7 +747,6 @@ function TIERS[7].apply(t)
             cam.FarPlane = cfg.farPlaneTarget
         end
     end)
-
     pcall(function()
         if not _globalOrig.Rendering then
             local s = settings()
@@ -759,7 +758,6 @@ function TIERS[7].apply(t)
             s.Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
         end
     end)
-
     pcall(function()
         if not _globalOrig.Materials then
             _globalOrig.Materials = {
@@ -775,12 +773,10 @@ function TIERS[7].apply(t)
             MaterialService.Use2022Materials = false
         end
     end)
-
     local function optimizeChar(char)
         if not char then
             return
         end
-
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum and not _orig[hum] and not isNever(hum) then
             local ok = pcall(function()
@@ -795,7 +791,6 @@ function TIERS[7].apply(t)
                 _stats.instancesOpt = _stats.instancesOpt + 1
             end
         end
-
         local desc = char:FindFirstChildOfClass("HumanoidDescription")
         if desc and not _orig[desc] and not isNever(desc) then
             local ok = pcall(function()
@@ -813,21 +808,18 @@ function TIERS[7].apply(t)
             end
         end
     end
-
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character then
             optimizeChar(player.Character)
         end
         table.insert(t.conns, player.CharacterAdded:Connect(optimizeChar))
     end
-
     table.insert(t.conns, Players.PlayerAdded:Connect(function(player)
         table.insert(t.conns, player.CharacterAdded:Connect(optimizeChar))
         if player.Character then
             optimizeChar(player.Character)
         end
     end))
-
     return 0
 end
 
@@ -838,7 +830,6 @@ function TIERS[7].revert(t)
         end
         t.conns = nil
     end
-
     pcall(function()
         if _globalOrig.Camera then
             local cam = Workspace.CurrentCamera
@@ -849,7 +840,6 @@ function TIERS[7].revert(t)
             _globalOrig.Camera = nil
         end
     end)
-
     pcall(function()
         if _globalOrig.Rendering then
             local s = settings()
@@ -858,7 +848,6 @@ function TIERS[7].revert(t)
             _globalOrig.Rendering = nil
         end
     end)
-
     pcall(function()
         if _globalOrig.Materials then
             MaterialService.Use2022Materials = _globalOrig.Materials.Use2022
@@ -870,7 +859,6 @@ function TIERS[7].revert(t)
             _globalOrig.Materials = nil
         end
     end)
-
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -942,8 +930,62 @@ local originalProps = {
     end
 }
 
+local function baseKey(inst)
+    if not inst then
+        return nil
+    end
+    local cn = inst.ClassName
+    if cn == "MeshPart" then
+        return "MeshPart"
+    end
+    if inst:IsA("BasePart") then
+        return "BasePart"
+    end
+    if cn == "ParticleEmitter" then
+        return "ParticleEmitter"
+    end
+    if cn == "Beam" then
+        return "Beam"
+    end
+    if cn == "Trail" then
+        return "Trail"
+    end
+    if cn == "Fire" then
+        return "Fire"
+    end
+    if cn == "Smoke" then
+        return "Smoke"
+    end
+    if cn == "Sparkles" then
+        return "Sparkles"
+    end
+    if inst:IsA("Light") then
+        return "Light"
+    end
+    if cn == "Decal" then
+        return "Decal"
+    end
+    if cn == "Texture" then
+        return "Texture"
+    end
+    if cn == "BillboardGui" then
+        return "BillboardGui"
+    end
+    if cn == "SurfaceGui" then
+        return "SurfaceGui"
+    end
+    if inst:IsA("Sound") then
+        return "Sound"
+    end
+    return nil
+end
+
 local function captureOriginal(inst)
-    local fn = originalProps[inst.ClassName]
+    local key = baseKey(inst)
+    if not key then
+        return nil
+    end
+    local fn = originalProps[key]
     if not fn then
         return nil
     end
@@ -959,7 +1001,6 @@ local setterFunctions = {}
 setterFunctions.BasePart = function(inst, orig, mode, state)
     local t, cs, r = orig[1], orig[2], orig[3]
     local shadow = cs
-
     if mode == "hidden" then
         inst.Transparency = cfg.HideOffscreenParts and 1 or t
         if cfg.DisableOffscreenShadows then
@@ -976,7 +1017,6 @@ setterFunctions.BasePart = function(inst, orig, mode, state)
             shadow = false
         end
     end
-
     inst.CastShadow = shadow
     inst.Reflectance = _tier >= 5 and math.min(r, 0.1) or r
 end
@@ -984,7 +1024,6 @@ end
 setterFunctions.MeshPart = function(inst, orig, mode, state)
     local t, cs, r = orig[1], orig[2], orig[3]
     local shadow = cs
-
     if mode == "hidden" then
         inst.Transparency = cfg.HideOffscreenParts and 1 or t
         if cfg.DisableOffscreenShadows then
@@ -998,10 +1037,8 @@ setterFunctions.MeshPart = function(inst, orig, mode, state)
     else
         inst.Transparency = t
     end
-
     inst.CastShadow = shadow
     inst.Reflectance = r
-
     if _tier >= 2 then
         pcall(function()
             inst.RenderFidelity = Enum.RenderFidelity.Performance
@@ -1022,7 +1059,6 @@ setterFunctions.ParticleEmitter = function(inst, orig, mode, state)
     local enabled = en
     local r = rate
     local tr = trans
-
     if mode == "hidden" then
         enabled = not cfg.DisableOffscreenEffects and en or false
         r = cfg.ReduceOffscreenParticles and 0 or rate
@@ -1036,12 +1072,10 @@ setterFunctions.ParticleEmitter = function(inst, orig, mode, state)
             r = rate * m
         end
     end
-
     if _tier >= 1 then
         r = r * cfg.particleScale
         tr = math.max(tr, 0.2)
     end
-
     inst.Enabled = enabled
     inst.Rate = r
     inst.Transparency = tr
@@ -1065,7 +1099,6 @@ end
 setterFunctions.Light = function(inst, orig, mode, state)
     local en, sh = orig[1], orig[2]
     local enabled = en
-
     if mode == "hidden" then
         enabled = not cfg.DisableOffscreenEffects and en or false
     elseif mode == "far" then
@@ -1073,7 +1106,6 @@ setterFunctions.Light = function(inst, orig, mode, state)
             enabled = false
         end
     end
-
     inst.Enabled = enabled
     inst.Shadows = _tier >= 3 and false or sh
 end
@@ -1081,7 +1113,6 @@ end
 setterFunctions.Decal = function(inst, orig, mode, state)
     local tr = orig[1]
     local v = tr
-
     if mode == "hidden" then
         if cfg.HideOffscreenDecals then
             v = 1
@@ -1091,18 +1122,15 @@ setterFunctions.Decal = function(inst, orig, mode, state)
             v = 1
         end
     end
-
     if _tier >= 4 then
         v = math.max(v, cfg.decalTransparency)
     end
-
     inst.Transparency = v
 end
 
 setterFunctions.Texture = function(inst, orig, mode, state)
     local tr = orig[1]
     local v = tr
-
     if cfg.OptimizeTextures then
         if mode == "hidden" then
             if cfg.HideOffscreenDecals then
@@ -1114,11 +1142,9 @@ setterFunctions.Texture = function(inst, orig, mode, state)
             end
         end
     end
-
     if _tier >= 4 then
         v = math.max(v, cfg.textureTransparency)
     end
-
     inst.Transparency = v
 end
 
@@ -1128,7 +1154,6 @@ local function guiSetter(inst, orig, mode)
         inst.Enabled = en
         return
     end
-
     if mode == "hidden" then
         inst.Enabled = cfg.DisableOffscreenWorldUI and false or en
     elseif mode == "far" then
@@ -1144,7 +1169,6 @@ setterFunctions.SurfaceGui = guiSetter
 setterFunctions.Sound = function(inst, orig, mode, state)
     local pl, vol = orig[1], orig[2]
     local playing = pl
-
     if mode == "hidden" then
         if cfg.DisableOffscreenSounds then
             playing = false
@@ -1154,7 +1178,6 @@ setterFunctions.Sound = function(inst, orig, mode, state)
             playing = false
         end
     end
-
     inst.Playing = playing
     inst.Volume = _tier >= 3 and vol * cfg.soundVolumeReduction or vol
 end
@@ -1163,7 +1186,6 @@ local function setInstanceMode(state, inst, mode)
     if not inst.Parent then
         return
     end
-
     local orig = state.originals[inst]
     if not orig and (mode ~= "near" or _tier > 0) then
         orig = captureOriginal(inst)
@@ -1171,12 +1193,14 @@ local function setInstanceMode(state, inst, mode)
             state.originals[inst] = orig
         end
     end
-
     if not orig then
         return
     end
-
-    local fn = setterFunctions[inst.ClassName]
+    local key = baseKey(inst)
+    if not key then
+        return
+    end
+    local fn = setterFunctions[key]
     if fn then
         local ok = pcall(fn, inst, orig, mode, state)
         if not ok then
@@ -1203,17 +1227,13 @@ local function applyMode(state, mode, force)
     if not force and state.mode == mode then
         return
     end
-
     state.mode = mode
-
     if mode ~= "near" or _tier > 0 then
         ensureOriginals(state)
     end
-
     for inst in pairs(state.originals) do
         setInstanceMode(state, inst, mode)
     end
-
     if mode == "near" and _tier == 0 then
         tableClear(state.originals)
     end
@@ -1226,13 +1246,10 @@ local function scanInstance(state, inst)
     if isNever(inst) or shouldSkipHumanoid(inst) then
         return
     end
-
     state.scanned[inst] = true
-
-    if originalProps[inst.ClassName] then
+    if baseKey(inst) then
         owner[inst] = state.root
         releaseOldInstance(inst)
-
         if state.mode ~= "near" or _tier > 0 then
             local orig = captureOriginal(inst)
             if orig then
@@ -1250,9 +1267,7 @@ local function scanTree(state, inst)
     if isNever(inst) or shouldSkipHumanoid(inst) then
         return
     end
-
     scanInstance(state, inst)
-
     local children = inst:GetChildren()
     for i = 1, #children do
         scanTree(state, children[i])
@@ -1293,7 +1308,6 @@ local function removeRoot(root, restore)
             owner[inst] = nil
         end
     end
-
     disconnectInstance(root)
     processed[root] = nil
     states[root] = nil
@@ -1304,7 +1318,6 @@ local function getBBox(root, state)
     if state.lastBBoxTime and (now - state.lastBBoxTime) < cfg.BBoxCacheTime then
         return state.cachedBBoxPos, state.cachedBBoxRadius
     end
-
     local pos, radius
     local ok, cf, size = pcall(function()
         if root:IsA("Model") then
@@ -1313,19 +1326,16 @@ local function getBBox(root, state)
             return root.CFrame, root.Size
         end
     end)
-
     if ok and cf and size and size.Magnitude > 0 then
         pos = cf.Position
         radius = size.Magnitude * 0.5
     end
-
     if pos then
         state.lastBBoxTime = now
         state.cachedBBoxPos = pos
         state.cachedBBoxRadius = radius
         return pos, radius
     end
-
     return nil
 end
 
@@ -1334,23 +1344,18 @@ local function evaluateVisibility(camera, pos, radius)
     local dx, dy, dz = pos.X - camCf.X, pos.Y - camCf.Y, pos.Z - camCf.Z
     local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
     local maxVis = cfg.MaxVisibleDistance
-
     if dist > maxVis + radius then
         return false, dist, 0
     end
-
     if not cfg.UseFrustumCulling then
         return true, dist, 0.5
     end
-
     local relX = dx * camCf.RightVector.X + dy * camCf.RightVector.Y + dz * camCf.RightVector.Z
     local relY = dx * camCf.UpVector.X + dy * camCf.UpVector.Y + dz * camCf.UpVector.Z
     local depth = -(dx * camCf.LookVector.X + dy * camCf.LookVector.Y + dz * camCf.LookVector.Z)
-
     if depth <= 0 then
         return dist <= radius + 5, dist, 0
     end
-
     local vFov = math.rad(math.max(camera.FieldOfView, 1))
     local vp = camera.ViewportSize
     local aspect = vp.X / math.max(vp.Y, 1)
@@ -1363,11 +1368,9 @@ local function evaluateVisibility(camera, pos, radius)
     local angleH = math.abs(atan2(relX, depth))
     local visible = angleV <= halfV and angleH <= halfH
     local edge = math.max(angleV / halfV, angleH / halfH)
-
     if edge > 1 then
         edge = 1
     end
-
     return visible, dist, 1 - edge
 end
 
@@ -1375,17 +1378,13 @@ local function chooseMode(state, visible, dist, centerWeight, now)
     if visible then
         state.lastVisible = now
     end
-
     local hiddenDelay = state.important and cfg.HighImportanceHiddenDelay or cfg.HiddenDelay
     local farEnter = cfg.FarDistance
-
     if state.important then
         farEnter = farEnter * cfg.HighImportanceMultiplier
     end
-
     farEnter = farEnter * (1 + cfg.CenterViewBoost * centerWeight)
     local farExit = farEnter * cfg.FarExitRatio
-
     if not visible then
         if now - (state.lastVisible or 0) >= hiddenDelay then
             state.farTime = nil
@@ -1393,7 +1392,6 @@ local function chooseMode(state, visible, dist, centerWeight, now)
         end
         return state.mode
     end
-
     if state.mode == "hidden" then
         state.farTime = nil
         if dist > farEnter then
@@ -1401,11 +1399,9 @@ local function chooseMode(state, visible, dist, centerWeight, now)
         end
         return "near"
     end
-
     if not cfg.UseDistanceQuality then
         return "near"
     end
-
     if dist > farEnter then
         state.farTime = state.farTime or now
         if now - state.farTime >= cfg.FarDelay then
@@ -1430,9 +1426,7 @@ local function register(root)
     if isNever(root) or shouldSkipHumanoid(root) then
         return
     end
-
     processed[root] = true
-
     local state = {
         root = root,
         originals = setmetatable({}, weakKeys),
@@ -1447,30 +1441,26 @@ local function register(root)
         cachedBBoxPos = nil,
         cachedBBoxRadius = nil
     }
-
     states[root] = state
     scanTree(state, root)
-
     connectInstance(root, root.Destroying, function()
         removeRoot(root, false)
     end)
-
     connectInstance(root, root.AncestryChanged, function(_, parent)
         if not parent then
             removeRoot(root, true)
+        else
+            state.lastBBoxTime = nil
         end
     end)
-
     connectInstance(root, root.DescendantAdded, function(inst)
         scanTree(state, inst)
     end)
-
     connectInstance(root, root.DescendantRemoving, function(inst)
         state.originals[inst] = nil
         state.scanned[inst] = nil
         owner[inst] = nil
     end)
-
     debugPrint("Registered " .. root:GetFullName())
 end
 
@@ -1483,25 +1473,20 @@ local function processMap(mapModel)
     if handled[mapModel] then
         return
     end
-
     handled[mapModel] = true
-
     connectInstance(mapModel, mapModel.Destroying, function()
         removeHandled(mapModel)
     end)
-
     connectInstance(mapModel, mapModel.AncestryChanged, function(_, parent)
         if not parent then
             removeHandled(mapModel)
         end
     end)
-
     if cfg.OptimizeWholeMap then
         register(mapModel)
         debugPrint("Whole map registered " .. mapModel:GetFullName())
         return
     end
-
     local function handleChild(child)
         if not child then
             return
@@ -1513,11 +1498,9 @@ local function processMap(mapModel)
             register(child)
         end
     end
-
     for _, child in ipairs(mapModel:GetChildren()) do
         handleChild(child)
     end
-
     connectInstance(mapModel, mapModel.ChildAdded, handleChild)
     debugPrint("Map processed " .. mapModel:GetFullName())
 end
@@ -1526,29 +1509,23 @@ local function processMapRoot(mapRoot)
     if handled[mapRoot] then
         return
     end
-
     handled[mapRoot] = true
-
     connectInstance(mapRoot, mapRoot.Destroying, function()
         removeHandled(mapRoot)
     end)
-
     connectInstance(mapRoot, mapRoot.AncestryChanged, function(_, parent)
         if not parent then
             removeHandled(mapRoot)
         end
     end)
-
     local function tryMap(obj)
         if obj and nameMatches(obj.Name, cfg.MapContentModelName) and (obj:IsA("Model") or obj:IsA("Folder")) then
             processMap(obj)
         end
     end
-
     for _, child in ipairs(mapRoot:GetChildren()) do
         tryMap(child)
     end
-
     connectInstance(mapRoot, mapRoot.ChildAdded, tryMap)
     debugPrint("Map root processed " .. mapRoot:GetFullName())
 end
@@ -1557,29 +1534,23 @@ local function processMapsFolder(folder)
     if handled[folder] then
         return
     end
-
     handled[folder] = true
-
     connectInstance(folder, folder.Destroying, function()
         removeHandled(folder)
     end)
-
     connectInstance(folder, folder.AncestryChanged, function(_, parent)
         if not parent then
             removeHandled(folder)
         end
     end)
-
     local function tryMapRoot(obj)
         if obj and (obj:IsA("Model") or obj:IsA("Folder")) then
             processMapRoot(obj)
         end
     end
-
     for _, child in ipairs(folder:GetChildren()) do
         tryMapRoot(child)
     end
-
     connectInstance(folder, folder.ChildAdded, tryMapRoot)
     debugPrint("Maps folder processed " .. folder:GetFullName())
 end
@@ -1610,11 +1581,9 @@ local function clearMapStates(restore)
         end
         disconnectInstance(root)
     end
-
     tableClear(states)
     tableClear(processed)
     tableClear(handled)
-
     for inst, conns in pairs(instanceConnections) do
         for i = 1, #conns do
             pcall(conns[i].Disconnect, conns[i])
@@ -1634,10 +1603,8 @@ local function heartbeatUpdate()
     if not camera then
         return
     end
-
     local now = tick()
     local removeList
-
     for root, state in pairs(states) do
         if not root.Parent then
             removeList = removeList or {}
@@ -1653,7 +1620,6 @@ local function heartbeatUpdate()
             end
         end
     end
-
     if removeList then
         for i = 1, #removeList do
             removeRoot(removeList[i], true)
@@ -1665,43 +1631,35 @@ local function startMap()
     if mapRunning then
         return
     end
-
     mapRunning = true
     local updateAcc = 0
-
     connectGlobal(RunService.Heartbeat, function(dt)
         if not mapRunning then
             return
         end
-
         updateAcc = updateAcc + dt
         if updateAcc < cfg.UpdateInterval then
             return
         end
         updateAcc = 0
-
         if flags.restart then
             flags.restart = false
             restartMapInternal()
             return
         end
-
         if flags.dirty then
             flags.dirty = false
             for _, state in pairs(states) do
                 applyMode(state, state.mode, true)
             end
         end
-
         heartbeatUpdate()
     end)
-
     connectGlobal(Workspace.ChildAdded, function(child)
         if nameMatches(child.Name, cfg.MapsFolder) and (child:IsA("Model") or child:IsA("Folder")) then
             processMapsFolder(child)
         end
     end)
-
     processExistingMaps()
     shared.SmartMapOptimizerRunning = true
     debugPrint("Map optimizer started")
@@ -1711,15 +1669,12 @@ local function stopMap(restore)
     if not mapRunning then
         return
     end
-
     mapRunning = false
     clearMapStates(restore ~= false)
-
     for _, c in ipairs(globalConnections) do
         pcall(c.Disconnect, c)
     end
     tableClear(globalConnections)
-
     shared.SmartMapOptimizerRunning = nil
     debugPrint("Map optimizer stopped")
 end
@@ -1741,10 +1696,8 @@ local function setTier(n)
     if n == _tier then
         return
     end
-
     local old = _tier
     _tier = n
-
     if n > old then
         local t0 = os.clock()
         for i = old + 1, n do
@@ -1782,7 +1735,6 @@ local function setTier(n)
         _stats.lastRevertTime = os.clock() - t0
         _stats.totalRevertTime = _stats.totalRevertTime + _stats.lastRevertTime
     end
-
     if mapRunning then
         flags.dirty = true
     end
@@ -1800,7 +1752,6 @@ local function onAdded(inst)
     if not _running then
         return
     end
-
     for i = 1, _tier do
         local t = TIERS[i]
         if t and not t.global and t.check(inst) then
@@ -1831,15 +1782,12 @@ local function bufAverage()
     if _fpsBufCount == 0 then
         return 0
     end
-
     local sum = 0
     local start = (_fpsBufHead - _fpsBufCount - 1 + _fpsBufSize) % _fpsBufSize + 1
-
     for i = 0, _fpsBufCount - 1 do
         local idx = (start + i - 1) % _fpsBufSize + 1
         sum = sum + _fpsBuf[idx]
     end
-
     return sum / _fpsBufCount
 end
 
@@ -1854,10 +1802,8 @@ function OPT.Enable()
     if _running then
         return
     end
-
     _running = true
     _lastSample = tick()
-
     _stats.tierChanges = 0
     _stats.instancesOpt = 0
     _stats.instancesRevert = 0
@@ -1866,25 +1812,19 @@ function OPT.Enable()
     _stats.totalApplyTime = 0
     _stats.totalRevertTime = 0
     _stats.errorsCaught = 0
-
     connectDirectoryAdded()
-
     local frameSignal = RunService:IsClient() and RunService.RenderStepped or RunService.Heartbeat
     _events.Stepped = frameSignal:Connect(function(dt)
         if dt <= 0 then
             return
         end
-
         bufInsert(1 / dt)
-
         local now = tick()
         if now - _lastSample < cfg.sampleInterval then
             return
         end
-
         _lastSample = now
         _fpsAvg = bufAverage()
-
         if _fpsAvg < cfg.targetFPS then
             _downCount = 0
             _upCount = _upCount + 1
@@ -1910,14 +1850,11 @@ function OPT.Disable()
     if not _running then
         return
     end
-
     _running = false
-
     for _, c in pairs(_events) do
         pcall(c.Disconnect, c)
     end
     _events = {}
-
     setTier(0)
     _upCount = 0
     _downCount = 0
@@ -1989,9 +1926,7 @@ function OPT.OverrideTier(tierIdx, tierDef)
     if type(tierDef) ~= "table" then
         return false, "tierDef must be a table"
     end
-
     local t = TIERS[tierIdx] or { tracked = setmetatable({}, weakKeys) }
-
     if tierDef.check ~= nil then
         t.check = tierDef.check
     end
@@ -2013,7 +1948,6 @@ function OPT.OverrideTier(tierIdx, tierDef)
     if t.tracked == nil then
         t.tracked = setmetatable({}, weakKeys)
     end
-
     TIERS[tierIdx] = t
     return true
 end
@@ -2038,18 +1972,15 @@ local function ctrEnable()
     if _ctr.gui then
         return
     end
-
     local lp = Players.LocalPlayer
     if not lp then
         return
     end
-
     local gui = Instance.new("ScreenGui")
     gui.Name = "OPT_Counter"
     gui.ResetOnSpawn = false
     gui.DisplayOrder = 999
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
     local win = Instance.new("Frame")
     win.Name = "Win"
     win.Size = UDim2.new(0, 94, 0, 30)
@@ -2058,22 +1989,18 @@ local function ctrEnable()
     win.BackgroundTransparency = 0.04
     win.BorderSizePixel = 0
     win.Parent = gui
-
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = win
-
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(192, 192, 192)
     stroke.Transparency = 0.88
     stroke.Thickness = 1
     stroke.Parent = win
-
     local pad = Instance.new("UIPadding")
     pad.PaddingLeft = UDim.new(0, 10)
     pad.PaddingRight = UDim.new(0, 10)
     pad.Parent = win
-
     local lbl = Instance.new("TextLabel")
     lbl.Name = "Label"
     lbl.Size = UDim2.new(1, 0, 1, 0)
@@ -2085,11 +2012,8 @@ local function ctrEnable()
     lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Parent = win
-
     gui.Parent = lp:WaitForChild("PlayerGui")
-
     local dragging, ds, sp = false, nil, nil
-
     win.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -2097,13 +2021,11 @@ local function ctrEnable()
             sp = win.Position
         end
     end)
-
     win.InputEnded:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             dragging = false
         end
     end)
-
     table.insert(_ctr.conns, UserInputService.InputChanged:Connect(function(inp)
         if not dragging then
             return
@@ -2114,7 +2036,6 @@ local function ctrEnable()
         local d = inp.Position - ds
         win.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
     end))
-
     local fps = 0
     table.insert(_ctr.conns, RunService.RenderStepped:Connect(function(dt)
         if dt <= 0 then
@@ -2125,7 +2046,6 @@ local function ctrEnable()
         local col = v >= 50 and _cc.good or v >= 30 and _cc.warn or _cc.bad
         lbl.Text = '<font color="' .. _cc.muted .. '">FPS</font> <b><font color="' .. col .. '">' .. v .. '</font></b>'
     end))
-
     _ctr.gui = gui
 end
 
@@ -2216,21 +2136,16 @@ function OPT.Set(k, v)
         setTier(v)
         return true
     end
-
     if cfg[k] == nil then
         return false, "invalid key: " .. tostring(k)
     end
-
     if type(v) == "number" and v ~= v then
         return false, "invalid number"
     end
-
     if v ~= nil and cfg[k] ~= nil and type(cfg[k]) ~= type(v) then
         return false, "invalid type"
     end
-
     cfg[k] = v
-
     if k == "directory" then
         if _running then
             connectDirectoryAdded()
@@ -2243,7 +2158,6 @@ function OPT.Set(k, v)
     elseif adaptiveRefreshKeys[k] and _tier > 0 then
         refreshTiers()
     end
-
     if mapRestartKeys[k] then
         if k == "NeverNames" or k == "NeverClasses" or k == "MapNeverMapChildren" or k == "MapSmartMapChildren" then
             rebuildSets()
@@ -2252,7 +2166,6 @@ function OPT.Set(k, v)
     elseif cullDirtyKeys[k] then
         flags.dirty = true
     end
-
     return true
 end
 
@@ -2270,17 +2183,14 @@ function OPT.Init(input)
     if type(input) ~= "table" then
         return false, "invalid config"
     end
-
     for k in pairs(input) do
         if cfg[k] == nil and k ~= "tier" then
             return false, "invalid key: " .. tostring(k)
         end
     end
-
     for k, v in pairs(input) do
         OPT.Set(k, v)
     end
-
     return true
 end
 
@@ -2313,7 +2223,7 @@ OPT.StopAll = stopAll
 OPT.Settings = cfg
 OPT.States = states
 
-startMap()
+pcall(startMap)
 
 shared.SmartMapOptimizerRunning = true
 shared.SmartMapOptimizer = {
