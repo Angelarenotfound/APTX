@@ -814,10 +814,10 @@ TIERS[7].apply = function(t)
         end
         table.insert(t.conns, player.CharacterAdded:Connect(optimizeChar))
     end
-    table.insert(t.conns, Players.PlayerAdded:Connect(function(player)
-        table.insert(t.conns, player.CharacterAdded:Connect(optimizeChar))
-        if player.Character then
-            optimizeChar(player.Character)
+    table.insert(t.conns, Players.PlayerAdded:Connect(function(pl)
+        table.insert(t.conns, pl.CharacterAdded:Connect(optimizeChar))
+        if pl.Character then
+            optimizeChar(pl.Character)
         end
     end))
     return 0
@@ -1182,6 +1182,85 @@ setterFunctions.Sound = function(inst, orig, mode, state)
     inst.Volume = _tier >= 3 and vol * cfg.soundVolumeReduction or vol
 end
 
+local restoreFunctions = {}
+
+restoreFunctions.BasePart = function(inst, o)
+    inst.Transparency = o[1]
+    inst.CastShadow = o[2]
+    inst.Reflectance = o[3]
+end
+
+restoreFunctions.MeshPart = function(inst, o)
+    inst.Transparency = o[1]
+    inst.CastShadow = o[2]
+    inst.Reflectance = o[3]
+    if o[4] ~= nil then
+        pcall(function()
+            inst.RenderFidelity = o[4]
+            inst.LODX = o[5]
+            inst.LODY = o[6]
+        end)
+    end
+end
+
+restoreFunctions.ParticleEmitter = function(inst, o)
+    inst.Enabled = o[1]
+    inst.Rate = o[2]
+    inst.Transparency = o[3]
+end
+
+restoreFunctions.Trail = function(inst, o)
+    inst.Enabled = o[1]
+    inst.Transparency = o[2]
+end
+
+for _, cls in ipairs({ "Beam", "Fire", "Smoke", "Sparkles" }) do
+    restoreFunctions[cls] = function(inst, o)
+        inst.Enabled = o[1]
+    end
+end
+
+restoreFunctions.Light = function(inst, o)
+    inst.Enabled = o[1]
+    inst.Shadows = o[2]
+end
+
+restoreFunctions.Decal = function(inst, o)
+    inst.Transparency = o[1]
+end
+
+restoreFunctions.Texture = function(inst, o)
+    inst.Transparency = o[1]
+end
+
+restoreFunctions.BillboardGui = function(inst, o)
+    inst.Enabled = o[1]
+end
+
+restoreFunctions.SurfaceGui = function(inst, o)
+    inst.Enabled = o[1]
+end
+
+restoreFunctions.Sound = function(inst, o)
+    inst.Playing = o[1]
+    inst.Volume = o[2]
+end
+
+local function restoreOriginal(inst, orig)
+    if not inst or not inst.Parent then
+        return
+    end
+    local key = baseKey(inst)
+    local fn = key and restoreFunctions[key]
+    if not fn then
+        return
+    end
+    local ok = pcall(fn, inst, orig)
+    if not ok then
+        _stats.errorsCaught = _stats.errorsCaught + 1
+    end
+end
+
 local function setInstanceMode(state, inst, mode)
     if not inst.Parent then
         return
@@ -1302,7 +1381,9 @@ local function removeRoot(root, restore)
     local state = states[root]
     if state then
         if restore then
-            pcall(applyMode, state, "near", true)
+            for inst, orig in pairs(state.originals) do
+                restoreOriginal(inst, orig)
+            end
         end
         for inst in pairs(state.scanned) do
             owner[inst] = nil
@@ -1457,6 +1538,10 @@ local function register(root)
         scanTree(state, inst)
     end)
     connectInstance(root, root.DescendantRemoving, function(inst)
+        local orig = state.originals[inst]
+        if orig then
+            restoreOriginal(inst, orig)
+        end
         state.originals[inst] = nil
         state.scanned[inst] = nil
         owner[inst] = nil
@@ -1574,7 +1659,9 @@ end
 local function clearMapStates(restore)
     for root, state in pairs(states) do
         if restore then
-            pcall(applyMode, state, "near", true)
+            for inst, orig in pairs(state.originals) do
+                restoreOriginal(inst, orig)
+            end
         end
         for inst in pairs(state.scanned) do
             owner[inst] = nil
@@ -2057,7 +2144,9 @@ local function ctrDisable()
         pcall(c.Disconnect, c)
     end
     _ctr.conns = {}
-    _ctr.gui:Destroy()
+    if _ctr.gui then
+        _ctr.gui:Destroy()
+    end
     _ctr.gui = nil
 end
 
@@ -2209,6 +2298,67 @@ function OPT.RestartMap()
         startMap()
     end
 end
+
+local function restoreGlobalUnconditional()
+    pcall(function()
+        if _globalOrig.Camera then
+            local cam = Workspace.CurrentCamera
+            if cam then
+                cam.FieldOfView = _globalOrig.Camera.FieldOfView
+                cam.FarPlane = _globalOrig.Camera.FarPlane
+            end
+        end
+    end)
+    pcall(function()
+        if _globalOrig.Rendering then
+            local s = settings()
+            s.Rendering.QualityLevel = _globalOrig.Rendering.QualityLevel
+            s.Rendering.MeshPartDetailLevel = _globalOrig.Rendering.MeshPartDetailLevel
+        end
+    end)
+    pcall(function()
+        if _globalOrig.Materials then
+            MaterialService.Use2022Materials = _globalOrig.Materials.Use2022
+            for m, parent in pairs(_globalOrig.Materials.list) do
+                pcall(function()
+                    m.Parent = parent
+                end)
+            end
+        end
+    end)
+    _globalOrig = {}
+end
+
+local function purgeTracked()
+    for i = 1, cfg.maxTier do
+        local t = TIERS[i]
+        if t and t.tracked then
+            for inst in pairs(t.tracked) do
+                if t.restore then
+                    pcall(t.restore, t, inst)
+                end
+            end
+            t.tracked = setmetatable({}, weakKeys)
+        end
+    end
+    _orig = setmetatable({}, weakKeys)
+    _origTier = setmetatable({}, weakKeys)
+end
+
+local function hardReset()
+    OPT.Disable()
+    stopMap(true)
+    ctrDisable()
+    setTier(0)
+    purgeTracked()
+    restoreGlobalUnconditional()
+    bufClear()
+    _upCount = 0
+    _downCount = 0
+    shared.SmartMapOptimizerRunning = nil
+end
+
+OPT.HardReset = hardReset
 
 local function stopAll()
     OPT.Disable()
