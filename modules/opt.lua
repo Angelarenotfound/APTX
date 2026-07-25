@@ -313,7 +313,7 @@ TIERS[1] = {
     end
 }
 
-function TIERS[1].apply(t, inst)
+TIERS[1].apply = function(t, inst)
     if _orig[inst] or isNever(inst) or owner[inst] then
         return false
     end
@@ -339,7 +339,7 @@ function TIERS[1].apply(t, inst)
     return false
 end
 
-function TIERS[1].restore(t, inst)
+TIERS[1].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -356,7 +356,7 @@ function TIERS[1].restore(t, inst)
     return true
 end
 
-function TIERS[1].revert(t)
+TIERS[1].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -376,7 +376,7 @@ TIERS[2] = {
     end
 }
 
-function TIERS[2].apply(t, inst)
+TIERS[2].apply = function(t, inst)
     if _orig[inst] or isNever(inst) then
         return false
     end
@@ -418,7 +418,7 @@ function TIERS[2].apply(t, inst)
     return false
 end
 
-function TIERS[2].restore(t, inst)
+TIERS[2].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -438,7 +438,7 @@ function TIERS[2].restore(t, inst)
     return true
 end
 
-function TIERS[2].revert(t)
+TIERS[2].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -458,7 +458,7 @@ TIERS[3] = {
     end
 }
 
-function TIERS[3].apply(t, inst)
+TIERS[3].apply = function(t, inst)
     if _orig[inst] or isNever(inst) or owner[inst] then
         return false
     end
@@ -483,7 +483,7 @@ function TIERS[3].apply(t, inst)
     return false
 end
 
-function TIERS[3].restore(t, inst)
+TIERS[3].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -501,7 +501,7 @@ function TIERS[3].restore(t, inst)
     return true
 end
 
-function TIERS[3].revert(t)
+TIERS[3].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -521,7 +521,7 @@ TIERS[4] = {
     end
 }
 
-function TIERS[4].apply(t, inst)
+TIERS[4].apply = function(t, inst)
     if _orig[inst] or isNever(inst) or owner[inst] then
         return false
     end
@@ -540,7 +540,7 @@ function TIERS[4].apply(t, inst)
     return false
 end
 
-function TIERS[4].restore(t, inst)
+TIERS[4].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -554,7 +554,7 @@ function TIERS[4].restore(t, inst)
     return true
 end
 
-function TIERS[4].revert(t)
+TIERS[4].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -574,7 +574,7 @@ TIERS[5] = {
     end
 }
 
-function TIERS[5].apply(t, inst)
+TIERS[5].apply = function(t, inst)
     if _orig[inst] or isNever(inst) then
         return false
     end
@@ -608,7 +608,7 @@ function TIERS[5].apply(t, inst)
     return false
 end
 
-function TIERS[5].restore(t, inst)
+TIERS[5].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -629,7 +629,7 @@ function TIERS[5].restore(t, inst)
     return true
 end
 
-function TIERS[5].revert(t)
+TIERS[5].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -649,7 +649,7 @@ TIERS[6] = {
     end
 }
 
-function TIERS[6].apply(t, inst)
+TIERS[6].apply = function(t, inst)
     if _orig[inst] or isNever(inst) then
         return false
     end
@@ -674,7 +674,7 @@ function TIERS[6].apply(t, inst)
     return false
 end
 
-function TIERS[6].restore(t, inst)
+TIERS[6].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -692,7 +692,7 @@ function TIERS[6].restore(t, inst)
     return true
 end
 
-function TIERS[6].revert(t)
+TIERS[6].revert = function(t)
     local c = 0
     for inst in pairs(t.tracked) do
         if t.restore(t, inst) then
@@ -714,7 +714,7 @@ TIERS[7] = {
     end
 }
 
-function TIERS[7].restore(t, inst)
+TIERS[7].restore = function(t, inst)
     local o = _orig[inst]
     if not o then
         return false
@@ -734,7 +734,7 @@ function TIERS[7].restore(t, inst)
     return true
 end
 
-function TIERS[7].apply(t)
+TIERS[7].apply = function(t)
     t.conns = {}
     pcall(function()
         local cam = Workspace.CurrentCamera
@@ -823,7 +823,7 @@ function TIERS[7].apply(t)
     return 0
 end
 
-function TIERS[7].revert(t)
+TIERS[7].revert = function(t)
     if t.conns then
         for _, c in ipairs(t.conns) do
             pcall(c.Disconnect, c)
