@@ -808,7 +808,7 @@ local function patchFlowGame()
     attempts = 0
     while not Misc and attempts < 10 do
         local success, result = pcall(function()
-            return Modules:FindFirstChild("Misc")
+            return Modules:FindFirstChild("Minigames")
         end)
         if success and result then
             Misc = result
