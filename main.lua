@@ -510,8 +510,7 @@ return 0
 end
 
 local function hideOffsetY()
-if UserInputService.TouchEnabled then return 8 end
-return -topInset()
+return 0
 end
 
 local function initResponsive()
@@ -581,6 +580,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 if playerGui:FindFirstChild("APTXGui") then playerGui.APTXGui:Destroy() end
 APTX.GUI = Instance.new("ScreenGui")
 APTX.GUI.Name = "APTXGui"
+APTX.GUI.IgnoreGuiInset = true
 APTX.GUI.ResetOnSpawn = false
 APTX.GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 APTX.GUI.Parent = playerGui
