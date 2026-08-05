@@ -80,6 +80,7 @@ APTX.HideButton = nil
 APTX.IsVisible = true
 APTX._connections = {}
 APTX._scale = 1
+APTX._recording = false
 APTX._sectionHideDelays = {}
 APTX._lastVisiblePos = nil
 APTX._floatingFrames = {}
@@ -115,7 +116,6 @@ end
 return "●"
 end
 
--- ── setIconColor: unifica ImageLabel y TextLabel (fallback) ──
 local function setIconColor(o, c)
 if not o then return end
 if o:IsA("ImageLabel") then
@@ -886,6 +886,22 @@ end)
 if not success then warn("[APTX:CreateContentArea] Error: " .. tostring(err)) end
 end
 
+local function applyRecording()
+local btn = APTX.HideButton
+if not btn then return end
+local t = APTX._recording and 1 or 0
+for _, d in ipairs(btn:GetDescendants()) do
+if d:IsA("ImageLabel") then d.ImageTransparency = t
+elseif d:IsA("TextLabel") then d.TextTransparency = t end
+end
+end
+
+function APTX:Recording(state)
+APTX._recording = state == true
+applyRecording()
+return APTX
+end
+
 function APTX:CreateHideButton()
 local success, err = pcall(function()
 local hideBtn = newB({
@@ -898,7 +914,7 @@ BackgroundTransparency = 1,
 Text = "",
 BorderSizePixel = 0,
 AutoButtonColor = false,
-Visible = false,   -- solo aparece para REABRIR
+Visible = false,
 }, APTX.GUI)
 local inverseScale = Instance.new("UIScale")
 inverseScale.Name = "InverseScale"
@@ -911,12 +927,14 @@ local scaleConn = APTX.GUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(upda
 table.insert(APTX._connections, scaleConn)
 updateInverseScale()
 local hideIcon = newI("chevron-down", 26, hideBtn)
-hideIcon.AnchorPoint = Vector2.new(0.5, 0.5); hideIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+hideIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+hideIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
 setIconColor(hideIcon, Color3.fromRGB(210, 210, 216))
 hideBtn.MouseEnter:Connect(function() setIconColor(hideIcon, Theme.BrandHi) end)
 hideBtn.MouseLeave:Connect(function() setIconColor(hideIcon, Color3.fromRGB(210, 210, 216)) end)
 hideBtn.MouseButton1Click:Connect(function() APTX:ToggleVisibility() end)
 APTX.HideButton = hideBtn
+applyRecording()
 end)
 if not success then warn("[APTX:CreateHideButton] Error: " .. tostring(err)) end
 end
