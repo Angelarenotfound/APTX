@@ -323,90 +323,33 @@ function HintSystem:DrawSolutionOneByOne(puzzle, delayTime)
     end
 end
 
-local function patchFlowGame()
+local function attemptPatch()
     local success, ReplicatedStorage = pcall(function()
         return game:GetService("ReplicatedStorage")
     end)
 
     if not success or not ReplicatedStorage then
-        warn("No se pudo obtener ReplicatedStorage")
-        return nil
+        return false
     end
 
-    local Modules = nil
-    local attempts = 0
-    while not Modules and attempts < 10 do
-        local success, result = pcall(function()
-            return ReplicatedStorage:FindFirstChild("Modules")
-        end)
-        if success and result then
-            Modules = result
-            break
-        end
-        attempts = attempts + 1
-        task.wait(0.1)
-    end
-
+    local Modules = ReplicatedStorage:FindFirstChild("Modules")
     if not Modules then
-        warn("No se encontró el módulo Modules después de varios intentos")
-        return nil
+        return false
     end
 
-    local Misc = nil
-    attempts = 0
-    while not Misc and attempts < 10 do
-        local success, result = pcall(function()
-            return Modules:FindFirstChild("Minigames")
-        end)
-        if success and result then
-            Misc = result
-            break
-        end
-        attempts = attempts + 1
-        task.wait(0.1)
-    end
-
+    local Misc = Modules:FindFirstChild("Minigames")
     if not Misc then
-        warn("No se encontró el módulo Misc")
-        return nil
+        return false
     end
 
-    local FlowGameManager = nil
-    attempts = 0
-    while not FlowGameManager and attempts < 10 do
-        local success, result = pcall(function()
-            return Misc:FindFirstChild("FlowGameManager")
-        end)
-        if success and result then
-            FlowGameManager = result
-            break
-        end
-        attempts = attempts + 1
-        task.wait(0.1)
-    end
-
+    local FlowGameManager = Misc:FindFirstChild("FlowGameManager")
     if not FlowGameManager then
-        warn("No se encontró FlowGameManager")
-        return nil
+        return false
     end
 
-    local FlowGameModule = nil
-    attempts = 0
-    while not FlowGameModule and attempts < 10 do
-        local success, result = pcall(function()
-            return FlowGameManager:FindFirstChild("FlowGame")
-        end)
-        if success and result then
-            FlowGameModule = result
-            break
-        end
-        attempts = attempts + 1
-        task.wait(0.1)
-    end
-
+    local FlowGameModule = FlowGameManager:FindFirstChild("FlowGame")
     if not FlowGameModule then
-        warn("No se encontró el módulo FlowGame")
-        return nil
+        return false
     end
 
     local gameModule = nil
@@ -415,42 +358,71 @@ local function patchFlowGame()
     end)
 
     if not success or not result then
-        warn("No se pudo cargar el módulo FlowGame: " .. tostring(result))
-        return nil
+        return false
     end
 
     gameModule = result
 
-    if gameModule.new then
-        local oldNew = gameModule.new
-        gameModule.new = function(...)
-            local success, result = pcall(oldNew, ...)
-
-            if not success or not result then
-                warn("Error al crear nuevo FlowGame: " .. tostring(result))
-                return result
-            end
-
-            local puzzle = result
-
-            if GenModule._solverThread and coroutine.status(GenModule._solverThread) ~= "dead" then
-                task.cancel(GenModule._solverThread)
-            end
-            GenModule._solverThread = task.spawn(function()
-                local success = safeCall(function()
-                    HintSystem:DrawSolutionOneByOne(puzzle)
-                end)
-                if not success then
-                    warn("Error al ejecutar HintSystem")
-                end
-            end)
-
-            return puzzle
-        end
-    else
-        warn("El módulo FlowGame no tiene función 'new'")
-        return nil
+    if not gameModule.new then
+        return false
     end
+
+    if gameModule._patched then
+        return true
+    end
+
+    local oldNew = gameModule.new
+    gameModule.new = function(...)
+        local success, result = pcall(oldNew, ...)
+
+        if not success or not result then
+            warn("Error al crear nuevo FlowGame: " .. tostring(result))
+            return result
+        end
+
+        local puzzle = result
+
+        if GenModule._solverThread and coroutine.status(GenModule._solverThread) ~= "dead" then
+            task.cancel(GenModule._solverThread)
+        end
+
+        GenModule._solverThread = task.spawn(function()
+            local success = safeCall(function()
+                HintSystem:DrawSolutionOneByOne(puzzle)
+            end)
+            if not success then
+                warn("Error al ejecutar HintSystem")
+            end
+        end)
+
+        return puzzle
+    end
+
+    gameModule._patched = true
+    return true
+end
+
+local function patchFlowGame()
+    task.wait(3)
+
+    local maxAttempts = 20
+    local attempt = 0
+
+    while attempt < maxAttempts do
+        attempt = attempt + 1
+        local success = attemptPatch()
+
+        if success then
+            warn("FlowGame parcheado exitosamente en intento " .. attempt)
+            return true
+        end
+
+        warn("Intento " .. attempt .. " de parcheo fallido, reintentando en 2 segundos...")
+        task.wait(2)
+    end
+
+    warn("No se pudo parchear FlowGame después de " .. maxAttempts .. " intentos")
+    return false
 end
 
 function GenModule.State(enabled)
@@ -470,7 +442,7 @@ end
 task.spawn(function()
     local success = safeCall(patchFlowGame)
     if not success then
-        warn("Error al parchear FlowGame")
+        warn("Error al ejecutar patchFlowGame")
     end
 end)
 
