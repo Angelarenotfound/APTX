@@ -5,444 +5,519 @@ local genConfig = {
     speed = 0.03
 }
 
-if not table.clone then
-    function table.clone(t)
-        local result = {}
-        for k, v in pairs(t) do
-            result[k] = v
+if not table.clear then
+    function table.clear(t)
+        for k in pairs(t) do
+            t[k] = nil
         end
-        return result
     end
 end
 
-local function safeCall(func, ...)
-    local success, result = pcall(func, ...)
-    if not success then
-        warn("Error en función: " .. tostring(result))
-        return nil, result
-    end
-    return result
+local dirs = {
+    { -1, 0 },
+    { 1, 0 },
+    { 0, -1 },
+    { 0, 1 }
+}
+
+local function logErr(err)
+    warn("GenModule: " .. tostring(err))
 end
 
-local function safeWait(delay)
-    if type(delay) ~= "number" or delay < 0 then
-        delay = 0.03
-    end
-    task.wait(delay)
+local function coordKey(row, col)
+    return row .. "-" .. col
 end
 
-local function getDirection(currentRow, currentCol, otherRow, otherCol)
-    if not currentRow or not currentCol or not otherRow or not otherCol then
-        return nil
-    end
-
-    if otherRow < currentRow then
-        return "up"
-    end
-    if otherRow > currentRow then
-        return "down"
-    end
-    if otherCol < currentCol then
-        return "left"
-    end
-    if otherCol > currentCol then
-        return "right"
-    end
-    return nil
+local function validNode(node)
+    return node ~= nil and node.row ~= nil and node.col ~= nil
 end
 
-local function getConnections(prev, curr, nextnode)
-    local connections = {}
+local function getConnections(prev, curr, next)
+    local conn = {}
 
-    if prev and curr then
-        local dir = getDirection(curr.row, curr.col, prev.row, prev.col)
-        if dir then
-            if dir == "up" then
-                dir = "down"
-            elseif dir == "down" then
-                dir = "up"
-            elseif dir == "left" then
-                dir = "right"
-            elseif dir == "right" then
-                dir = "left"
-            end
-            if dir ~= "" and dir then
-                connections[dir] = true
-            end
+    if prev and prev.row ~= nil and prev.col ~= nil and curr and curr.row ~= nil and curr.col ~= nil then
+        if prev.row < curr.row then
+            conn.down = true
+        elseif prev.row > curr.row then
+            conn.up = true
+        elseif prev.col < curr.col then
+            conn.right = true
+        elseif prev.col > curr.col then
+            conn.left = true
         end
     end
 
-    if nextnode and curr then
-        local dir = getDirection(curr.row, curr.col, nextnode.row, nextnode.col)
-        if dir and dir ~= "" then
-            connections[dir] = true
+    if next and next.row ~= nil and next.col ~= nil and curr and curr.row ~= nil and curr.col ~= nil then
+        if next.row < curr.row then
+            conn.up = true
+        elseif next.row > curr.row then
+            conn.down = true
+        elseif next.col < curr.col then
+            conn.left = true
+        elseif next.col > curr.col then
+            conn.right = true
         end
     end
 
-    return connections
+    return conn
 end
 
-local function isNeighbourLocal(r1, c1, r2, c2)
-    if not r1 or not c1 or not r2 or not c2 then
-        return false
+local function countNeighbors(byKey, row, col)
+    local count = 0
+
+    for _, d in dirs do
+        if byKey[coordKey(row + d[1], col + d[2])] then
+            count += 1
+        end
     end
 
-    if r2 == r1 - 1 and c2 == c1 then
-        return "up"
-    end
-    if r2 == r1 + 1 and c2 == c1 then
-        return "down"
-    end
-    if r2 == r1 and c2 == c1 - 1 then
-        return "left"
-    end
-    if r2 == r1 and c2 == c1 + 1 then
-        return "right"
-    end
-    return false
+    return count
 end
 
-local function coordKey(node)
-    if not node or not node.row or not node.col then
-        return nil
-    end
-    return string.format("%d-%d", node.row, node.col)
-end
-
-local function orderPathFromEndpoints(path, endpoints)
+local function orderPath(path, endpoints)
     if not path or #path == 0 then
-        return path or {}
+        return {}
     end
 
-    local startEndpoint = nil
+    local byKey = {}
+
+    for _, node in path do
+        if validNode(node) then
+            byKey[coordKey(node.row, node.col)] = node
+        end
+    end
+
+    local start
 
     if endpoints and type(endpoints) == "table" then
         for _, ep in endpoints do
-            if ep and ep.row and ep.col then
-                for _, n in path do
-                    if n.row == ep.row and n.col == ep.col then
-                        startEndpoint = { row = ep.row, col = ep.col }
-                        break
-                    end
+            if validNode(ep) then
+                local node = byKey[coordKey(ep.row, ep.col)]
+
+                if node then
+                    start = node
+                    break
                 end
             end
-            if startEndpoint then
+        end
+    end
+
+    if not start then
+        for _, node in path do
+            if validNode(node) and countNeighbors(byKey, node.row, node.col) == 1 then
+                start = node
                 break
             end
         end
     end
 
-    if not startEndpoint then
-        local inPath = {}
-        for _, n in path do
-            local key = coordKey(n)
-            if key then
-                inPath[key] = n
-            end
-        end
-
-        for _, n in path do
-            local neighbours = 0
-            local dirs = {
-                { n.row - 1, n.col },
-                { n.row + 1, n.col },
-                { n.row, n.col - 1 },
-                { n.row, n.col + 1 }
-            }
-            for _, dir in dirs do
-                local r, c = dir[1], dir[2]
-                local key = string.format("%d-%d", r, c)
-                if inPath[key] ~= nil then
-                    neighbours = neighbours + 1
-                end
-            end
-            if neighbours == 1 then
-                startEndpoint = { row = n.row, col = n.col }
-                break
-            end
-        end
+    if not validNode(start) then
+        start = path[1]
     end
 
-    if not startEndpoint and path[1] then
-        startEndpoint = { row = path[1].row, col = path[1].col }
-    end
-
-    if not startEndpoint then
+    if not validNode(start) then
         return path
     end
 
-    local remaining = {}
-    for _, n in path do
-        local key = coordKey(n)
-        if key then
-            remaining[key] = { row = n.row, col = n.col }
-        end
+    local remaining = byKey
+    remaining[coordKey(start.row, start.col)] = nil
+
+    local remainingCount = 0
+
+    for _ in remaining do
+        remainingCount += 1
     end
 
-    local ordered = {}
-    local current = { row = startEndpoint.row, col = startEndpoint.col }
-    table.insert(ordered, table.clone(current))
+    local ordered = { start }
+    local current = start
 
-    local key = coordKey(current)
-    if key then
-        remaining[key] = nil
-    end
+    while remainingCount > 0 do
+        local nextNode
+        local nextKey
 
-    while true do
-        local size = 0
-        for _ in remaining do
-            size = size + 1
-        end
-        if not (size > 0) then
-            break
-        end
+        for _, d in dirs do
+            local key = coordKey(current.row + d[1], current.col + d[2])
+            local node = remaining[key]
 
-        local foundNext = false
-        for key, node in remaining do
-            local neighbour = isNeighbourLocal(current.row, current.col, node.row, node.col)
-            if neighbour then
-                table.insert(ordered, table.clone(node))
-                remaining[key] = nil
-                current = node
-                foundNext = true
+            if node then
+                nextNode = node
+                nextKey = key
                 break
             end
         end
-        if not foundNext then
-            return path
+
+        if not nextNode then
+            break
         end
+
+        ordered[#ordered + 1] = nextNode
+        remaining[nextKey] = nil
+        remainingCount -= 1
+        current = nextNode
     end
 
     return ordered
 end
 
+local function resetSolverState(puzzle)
+    if type(puzzle.paths) == "table" then
+        if type(puzzle._genColors) == "table" then
+            for _, colorIndex in puzzle._genColors do
+                puzzle.paths[colorIndex] = nil
+            end
+        else
+            table.clear(puzzle.paths)
+        end
+    else
+        puzzle.paths = {}
+    end
+
+    if type(puzzle.gridConnections) == "table" then
+        if type(puzzle._genKeys) == "table" then
+            for _, key in puzzle._genKeys do
+                puzzle.gridConnections[key] = nil
+            end
+        else
+            table.clear(puzzle.gridConnections)
+        end
+    else
+        puzzle.gridConnections = {}
+    end
+
+    puzzle._genColors = {}
+    puzzle._genKeys = {}
+    puzzle._genKeySet = {}
+end
+
 local HintSystem = {}
 
-function HintSystem:DrawSolutionOneByOne(puzzle, delayTime)
+function HintSystem.solve(puzzle, delayTime)
     if not genConfig.enabled then
-        return nil
+        return
     end
 
-    if not puzzle or not puzzle.Solution then
-        warn("Puzzle no válido o sin solución")
-        return nil
+    if type(puzzle) ~= "table" or type(puzzle.Solution) ~= "table" or #puzzle.Solution == 0 then
+        return
     end
 
-    if delayTime == nil then
+    if type(delayTime) ~= "number" or delayTime < 0 then
         delayTime = genConfig.speed
     end
 
     if type(delayTime) ~= "number" or delayTime < 0 then
-        delayTime = 0.03
+        delayTime = 0
     end
 
-    local totalPaths = #puzzle.Solution
-    if totalPaths == 0 then
-        warn("No hay caminos para dibujar")
-        return nil
-    end
+    resetSolverState(puzzle)
 
     local indices = {}
-    for i = 1, totalPaths do
-        table.insert(indices, i)
+
+    for i = 1, #puzzle.Solution do
+        indices[i] = i
     end
 
-    for i = #indices - 1, 2, -1 do
-        local j = math.random(1, i)
-        local temp = indices[i + 1]
-        indices[i + 1] = indices[j + 1]
-        indices[j + 1] = temp
+    for i = #indices, 2, -1 do
+        local j = math.random(i)
+        indices[i], indices[j] = indices[j], indices[i]
+    end
+
+    local updateThread
+
+    local function updateNow()
+        if type(puzzle.updateGui) == "function" then
+            local ok, err = pcall(puzzle.updateGui, puzzle)
+
+            if not ok then
+                logErr(err)
+            end
+        end
+    end
+
+    local function requestUpdate()
+        if updateThread then
+            return
+        end
+
+        updateThread = task.defer(function()
+            updateThread = nil
+            updateNow()
+        end)
+    end
+
+    local function flushUpdate()
+        if not updateThread then
+            return
+        end
+
+        task.cancel(updateThread)
+        updateThread = nil
+        updateNow()
     end
 
     for _, colorIndex in indices do
-        if puzzle.Solution[colorIndex] then
-            local path = puzzle.Solution[colorIndex]
+        local path = puzzle.Solution[colorIndex]
+
+        if type(path) == "table" then
             local endpoints = puzzle.targetPairs and puzzle.targetPairs[colorIndex]
-            local orderedPath = orderPathFromEndpoints(path, endpoints)
+            local ordered = orderPath(path, endpoints)
 
-            if orderedPath and #orderedPath > 0 then
-                if not puzzle.paths then
-                    puzzle.paths = {}
-                end
-                puzzle.paths[colorIndex] = {}
+            if #ordered > 0 then
+                puzzle._genColors[#puzzle._genColors + 1] = colorIndex
 
-                for i = 0, #orderedPath - 1 do
-                    local node = orderedPath[i + 1]
-                    if node and node.row and node.col then
-                        table.insert(puzzle.paths[colorIndex], { row = node.row, col = node.col })
+                local line = {}
+                puzzle.paths[colorIndex] = line
 
-                        local prev = orderedPath[i]
-                        local nextNode = orderedPath[i + 2]
-                        local conn = getConnections(prev, node, nextNode)
+                for i = 1, #ordered do
+                    local node = ordered[i]
 
-                        if not puzzle.gridConnections then
-                            puzzle.gridConnections = {}
-                        end
-                        local key = string.format("%d-%d", node.row, node.col)
-                        puzzle.gridConnections[key] = conn
+                    if validNode(node) then
+                        line[#line + 1] = { row = node.row, col = node.col }
 
-                        local success = safeCall(function()
-                            if puzzle.updateGui then
-                                puzzle:updateGui()
-                            end
-                        end)
+                        local key = coordKey(node.row, node.col)
+                        puzzle.gridConnections[key] = getConnections(ordered[i - 1], node, ordered[i + 1])
 
-                        if not success then
-                            warn("Error al actualizar GUI")
+                        if not puzzle._genKeySet[key] then
+                            puzzle._genKeySet[key] = true
+                            puzzle._genKeys[#puzzle._genKeys + 1] = key
                         end
 
-                        safeWait(delayTime)
+                        requestUpdate()
+
+                        if delayTime > 0 then
+                            task.wait(delayTime)
+                        elseif i % 250 == 0 then
+                            task.wait()
+                        end
                     end
                 end
-
-                local success = safeCall(function()
-                    if puzzle.checkForWin then
-                        puzzle:checkForWin()
-                    end
-                end)
-
-                if not success then
-                    warn("Error al verificar victoria")
-                end
-            else
-                warn("Camino ordenado vacío para color " .. tostring(colorIndex))
             end
-        else
-            warn("Índice de color " .. tostring(colorIndex) .. " no existe en la solución")
         end
     end
 
-    local success = safeCall(function()
-        if puzzle.checkForWin then
-            puzzle:checkForWin()
-        end
-    end)
+    flushUpdate()
 
-    if not success then
-        warn("Error en verificación final")
+    if type(puzzle.checkForWin) == "function" then
+        task.defer(function()
+            local ok, err = pcall(puzzle.checkForWin, puzzle)
+
+            if not ok then
+                logErr(err)
+            end
+        end)
     end
 end
 
+local activeThread
+
+local function cancelThread(thread)
+    if thread and thread ~= coroutine.running() and coroutine.status(thread) ~= "dead" then
+        pcall(task.cancel, thread)
+    end
+end
+
+local function startSolver(puzzle)
+    if type(puzzle) == "table" then
+        cancelThread(puzzle._genSolver)
+
+        puzzle._genSolver = task.defer(function()
+            local current = coroutine.running()
+
+            HintSystem.solve(puzzle)
+
+            if puzzle._genSolver == current then
+                puzzle._genSolver = nil
+            end
+        end)
+
+        return
+    end
+
+    cancelThread(activeThread)
+
+    activeThread = task.defer(function()
+        local current = coroutine.running()
+
+        HintSystem.solve(puzzle)
+
+        if activeThread == current then
+            activeThread = nil
+        end
+    end)
+end
+
+local function unwrapNew(wrapper)
+    if type(wrapper) ~= "function" then
+        return nil
+    end
+
+    if type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
+        return nil
+    end
+
+    local current = wrapper
+
+    for _ = 1, 5 do
+        local ok, nextFn = pcall(function()
+            local i = 1
+
+            while true do
+                local name, value = debug.getupvalue(current, i)
+
+                if not name then
+                    return nil
+                end
+
+                if type(value) == "function" and value ~= current then
+                    if name == "oldNew" or name == "original" or name == "_originalNew" or name == "old" then
+                        return value
+                    end
+                end
+
+                i += 1
+            end
+        end)
+
+        if not ok or type(nextFn) ~= "function" or nextFn == current then
+            break
+        end
+
+        current = nextFn
+    end
+
+    if current ~= wrapper then
+        return current
+    end
+
+    return nil
+end
+
 local function attemptPatch()
-    local success, ReplicatedStorage = pcall(function()
+    local ok, ReplicatedStorage = pcall(function()
         return game:GetService("ReplicatedStorage")
     end)
 
-    if not success or not ReplicatedStorage then
+    if not ok or not ReplicatedStorage then
         return false
     end
 
     local Modules = ReplicatedStorage:FindFirstChild("Modules")
+
     if not Modules then
         return false
     end
 
-    local Misc = Modules:FindFirstChild("Minigames")
-    if not Misc then
+    local Minigames = Modules:FindFirstChild("Minigames")
+
+    if not Minigames then
         return false
     end
 
-    local FlowGameManager = Misc:FindFirstChild("FlowGameManager")
+    local FlowGameManager = Minigames:FindFirstChild("FlowGameManager")
+
     if not FlowGameManager then
         return false
     end
 
     local FlowGameModule = FlowGameManager:FindFirstChild("FlowGame")
+
     if not FlowGameModule then
         return false
     end
 
-    local gameModule = nil
-    local success, result = pcall(function()
-        return require(FlowGameModule)
-    end)
+    local requireOk, gameModule = pcall(require, FlowGameModule)
 
-    if not success or not result then
+    if not requireOk or type(gameModule) ~= "table" then
         return false
     end
 
-    gameModule = result
-
-    if not gameModule.new then
-        return false
-    end
-
-    if gameModule._patched then
+    if gameModule._genPatched then
         return true
     end
 
-    local oldNew = gameModule.new
-    gameModule.new = function(...)
-        local success, result = pcall(oldNew, ...)
+    local oldNew = gameModule._genOriginal
 
-        if not success or not result then
-            warn("Error al crear nuevo FlowGame: " .. tostring(result))
-            return result
+    if not oldNew and gameModule._patched then
+        oldNew = unwrapNew(gameModule.new)
+
+        if not oldNew then
+            return true
         end
-
-        local puzzle = result
-
-        if GenModule._solverThread and coroutine.status(GenModule._solverThread) ~= "dead" then
-            task.cancel(GenModule._solverThread)
-        end
-
-        GenModule._solverThread = task.spawn(function()
-            local success = safeCall(function()
-                HintSystem:DrawSolutionOneByOne(puzzle)
-            end)
-            if not success then
-                warn("Error al ejecutar HintSystem")
-            end
-        end)
-
-        return puzzle
     end
 
+    if not oldNew then
+        oldNew = gameModule.new
+    end
+
+    if type(oldNew) ~= "function" then
+        return false
+    end
+
+    if oldNew == gameModule.new and gameModule._patched then
+        return true
+    end
+
+    gameModule._genOriginal = oldNew
+
+    gameModule.new = function(...)
+        local results = table.pack(pcall(oldNew, ...))
+
+        if not results[1] then
+            logErr(results[2])
+            return nil
+        end
+
+        local puzzle = results[2]
+
+        if puzzle then
+            startSolver(puzzle)
+        end
+
+        return table.unpack(results, 2, results.n)
+    end
+
+    gameModule._genPatched = true
     gameModule._patched = true
+
     return true
 end
 
 local function patchFlowGame()
     task.wait(3)
 
-    local maxAttempts = 20
-    local attempt = 0
-
-    while attempt < maxAttempts do
-        attempt = attempt + 1
-        local success = attemptPatch()
-
-        if success then
-            warn("FlowGame parcheado exitosamente en intento " .. attempt)
+    for _ = 1, 20 do
+        if attemptPatch() then
             return true
         end
 
-        warn("Intento " .. attempt .. " de parcheo fallido, reintentando en 2 segundos...")
         task.wait(2)
     end
 
-    warn("No se pudo parchear FlowGame después de " .. maxAttempts .. " intentos")
     return false
 end
 
 function GenModule.State(enabled)
     if enabled ~= nil then
-        genConfig.enabled = enabled
+        genConfig.enabled = not not enabled
     end
+
     return genConfig.enabled
 end
 
 function GenModule.Speed(speed)
-    if speed ~= nil and type(speed) == "number" and speed >= 0 then
+    if type(speed) == "number" and speed >= 0 then
         genConfig.speed = speed
     end
+
     return genConfig.speed
 end
 
 task.spawn(function()
-    local success = safeCall(patchFlowGame)
-    if not success then
-        warn("Error al ejecutar patchFlowGame")
+    local ok, result = pcall(patchFlowGame)
+
+    if not ok then
+        logErr(result)
+    elseif result == false then
+        logErr("patch failed")
     end
 end)
 
